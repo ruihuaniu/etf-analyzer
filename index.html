@@ -3026,12 +3026,14 @@ async function toggleETF(ticker){
   if(selectedETFs.includes(ticker)){removeETF(ticker);return;}
   if(selectedETFs.length>=8){showToast('Max 8 ETFs — remove one first');return;}
   selectedETFs.push(ticker);
+  saveState();
   updateChips();
   renderETFList();
   await renderContent();
 }
 function removeETF(ticker){
   selectedETFs=selectedETFs.filter(t=>t!==ticker);
+  saveState();
   updateChips();renderETFList();renderContent();
 }
 
@@ -3434,6 +3436,7 @@ document.querySelectorAll('.period-btn').forEach(btn=>{
     document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     activePeriod=btn.dataset.period;
+    saveState();
     renderContent();
   });
 });
@@ -3442,6 +3445,7 @@ document.querySelectorAll('.chart-tab').forEach(btn=>{
     document.querySelectorAll('.chart-tab').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     activeView=btn.dataset.view;
+    saveState();
     renderContent();
   });
 });
@@ -3450,6 +3454,7 @@ document.getElementById('catFilter').addEventListener('click',e=>{
   document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
   e.target.classList.add('active');
   activeCategory=e.target.dataset.cat;
+  saveState();
   renderETFList();
 });
 document.getElementById('etfSearch').addEventListener('input',renderETFList);
@@ -3465,11 +3470,49 @@ function applyTheme(light){
   updateChartDefaults();
   renderContent();
 }
-document.getElementById('themeToggle').addEventListener('click',()=>applyTheme(!isLight));
+document.getElementById('themeToggle').addEventListener('click',()=>{applyTheme(!isLight);saveState();});
+
+// ─── Persistence helpers ──────────────────────────────────────────────────────
+const LS_KEY='etflens_state';
+function saveState(){
+  try{
+    localStorage.setItem(LS_KEY,JSON.stringify({
+      selectedETFs,activePeriod,activeView,activeCategory,isLight
+    }));
+  }catch(e){}
+}
+function loadState(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-selectedETFs=['VAS','VGS','VDHG'];
-applyTheme(true);
+const saved=loadState();
+if(saved){
+  selectedETFs=Array.isArray(saved.selectedETFs)&&saved.selectedETFs.length?saved.selectedETFs:['VAS','SPY','QQQ'];
+  activePeriod=saved.activePeriod||'1y';
+  activeView=saved.activeView||'overview';
+  activeCategory=saved.activeCategory||'all';
+  // Restore period button UI
+  document.querySelectorAll('.period-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.period===activePeriod);
+  });
+  // Restore chart tab UI
+  document.querySelectorAll('.chart-tab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.view===activeView);
+  });
+  // Restore category filter UI
+  document.querySelectorAll('.cat-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.cat===activeCategory);
+  });
+  applyTheme(saved.isLight!==undefined?saved.isLight:true);
+} else {
+  selectedETFs=['VAS','SPY','QQQ'];
+  applyTheme(true);
+}
 </script>
 </body>
 </html>
