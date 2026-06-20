@@ -98,10 +98,27 @@
   .etf-change.neg{color:var(--accent3);}
   .check-box{width:14px;height:14px;border:1px solid var(--border2);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;transition:all .15s;}
   .etf-item.selected .check-box{background:var(--accent);border-color:var(--accent);color:var(--bg);}
+  /* Mobile full-screen ETF modal */
+  .etf-modal-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1500;
+  }
+  .etf-modal-overlay.open{display:flex;}
+  .etf-modal{
+    display:flex;flex-direction:column;width:100%;height:100%;background:var(--bg);
+    margin-top:auto;animation:slideUp .22s ease-out;overflow:hidden;
+  }
+  @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .etf-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .etf-modal-close{background:var(--surface);border:1px solid var(--border2);color:var(--text);width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .etf-modal-footer{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg);}
+  .etf-modal-done{background:var(--accent);color:var(--bg);border:none;font-family:var(--mono);font-weight:600;font-size:13px;padding:10px 24px;border-radius:6px;cursor:pointer;}
   /* Content */
   .content{display:flex;flex-direction:column;overflow:hidden;}
   .chart-header{padding:20px 32px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+  .selected-chips-row{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
   .selected-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .mobile-edit-etfs-btn{display:none;flex-shrink:0;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 12px;border-radius:20px;cursor:pointer;white-space:nowrap;}
+  .mobile-edit-etfs-btn:hover{border-color:var(--accent);color:var(--accent);}
   .chip{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);font-size:11px;background:var(--surface);cursor:default;}
   .chip-color{width:6px;height:6px;border-radius:50%;}
   .chip-remove{color:var(--text-dim);cursor:pointer;font-size:10px;padding:0 1px;transition:color .1s;}
@@ -155,12 +172,14 @@
   .source-tag.err{background:rgba(240,96,128,.10);color:var(--accent3);border-color:rgba(240,96,128,.2);}
   @media(max-width:900px){
     .main{grid-template-columns:1fr;}
-    .sidebar{max-height:380px;}
+    .sidebar{display:none;}
     .two-col-charts{grid-template-columns:1fr;}
     .header,.charts-area,.stats-grid{padding:16px;}
     .header{gap:12px;}
     .period-btns{flex-wrap:wrap;}
     .chart-header{padding:14px 16px 12px;flex-direction:column;align-items:stretch;gap:10px;}
+    .selected-chips-row{flex-wrap:wrap;}
+    .mobile-edit-etfs-btn{display:inline-flex;align-items:center;}
     .chart-tabs{
       width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
       scrollbar-width:none;-ms-overflow-style:none;
@@ -296,8 +315,11 @@
 
   <div class="content">
     <div class="chart-header">
-      <div class="selected-chips" id="selectedChips">
-        <span style="color:var(--text-dim);font-size:12px;">No ETFs selected</span>
+      <div class="selected-chips-row">
+        <div class="selected-chips" id="selectedChips">
+          <span style="color:var(--text-dim);font-size:12px;">No ETFs selected</span>
+        </div>
+        <button class="mobile-edit-etfs-btn" id="mobileEditEtfsBtn" aria-label="Add or remove ETFs">+ Edit ETFs</button>
       </div>
       <div class="chart-tabs">
         <button class="chart-tab active" data-view="overview">Overview</button>
@@ -311,6 +333,43 @@
     <div id="mainContent"></div>
   </div>
 </div>
+
+<div class="etf-modal-overlay" id="etfModalOverlay">
+  <div class="etf-modal">
+    <div class="etf-modal-header">
+      <div class="section-label" style="margin:0;">Select ETFs to Compare</div>
+      <button class="etf-modal-close" id="etfModalClose" aria-label="Close">✕</button>
+    </div>
+    <div class="sidebar-section" style="border-bottom:1px solid var(--border);padding:16px 20px;flex-shrink:0;">
+      <div class="search-wrap" style="margin-bottom:12px;">
+        <span class="search-icon">⌕</span>
+        <input class="search-input" type="text" id="etfSearchMobile" placeholder="Search ticker or name…" aria-label="Search ETFs">
+      </div>
+      <div class="category-filter" id="catFilterMobile">
+        <button class="cat-btn active" data-cat="all">All</button>
+        <button class="cat-btn" data-cat="popular">⭐ Popular</button>
+        <button class="cat-btn" data-cat="au-equity">🦘 AU Equity</button>
+        <button class="cat-btn" data-cat="au-bond">🦘 AU Bond</button>
+        <button class="cat-btn" data-cat="diversified">Diversified</button>
+        <button class="cat-btn" data-cat="equity">US Equity</button>
+        <button class="cat-btn" data-cat="bond">US Bond</button>
+        <button class="cat-btn" data-cat="sector">Sector</button>
+        <button class="cat-btn" data-cat="intl">Intl</button>
+        <button class="cat-btn" data-cat="commodity">Commodity</button>
+        <button class="cat-btn" data-cat="real-estate">Real Estate</button>
+        <button class="cat-btn" data-cat="factor">Factor</button>
+        <button class="cat-btn" data-cat="crypto">Crypto</button>
+        <button class="cat-btn" data-cat="leveraged">Leveraged</button>
+      </div>
+    </div>
+    <div class="etf-list" id="etfListMobile" style="flex:1;"></div>
+    <div class="etf-modal-footer">
+      <span id="etfModalCount" style="font-size:11px;color:var(--text-dim);">0/8 selected</span>
+      <button class="etf-modal-done" id="etfModalDone">Done</button>
+    </div>
+  </div>
+</div>
+
 <div class="disclaimer">
   ⚠️ <strong>General information only.</strong> ETF Lens is not financial advice. Historical and simulated performance is for educational purposes only and does not guarantee future results. ASX-listed ETF prices are in AUD; US-listed ETF prices are in USD. Always read the Product Disclosure Statement (PDS) and consider your personal circumstances before investing. Past performance is not indicative of future performance.
 </div>
@@ -3302,11 +3361,15 @@ updateChartDefaults();
 function updateChips(){
   const w=document.getElementById('selectedChips');
   if(!selectedETFs.length){w.innerHTML='<span style="color:var(--text-dim);font-size:12px;">No ETFs selected — choose up to 8</span>';return;}
-  w.innerHTML=selectedETFs.map((t,i)=>`
-    <div class="chip">
+  w.innerHTML=selectedETFs.map((t,i)=>{
+    const etf=ETF_DB.find(e=>e.t===t);
+    const fullName=etf?etf.n:t;
+    return`
+    <div class="chip" title="${fullName.replace(/"/g,'&quot;')}">
       <span class="chip-color" style="background:${COLORS[i]}"></span>${t}
       <span class="chip-remove" onclick="removeETF('${t}')" title="Remove ${t}">✕</span>
-    </div>`).join('')
+    </div>`;
+  }).join('')
     + `<span class="selected-count">${selectedETFs.length}/8 selected</span>`;
 }
 
@@ -3330,8 +3393,8 @@ const POPULAR_ETFS = [
   'VDGR',   // #15 AU — second most popular Vanguard diversified after VDHG
 ];
 
-function getFiltered(){
-  const q=document.getElementById('etfSearch').value.toLowerCase();
+function getFiltered(searchInputId){
+  const q=(document.getElementById(searchInputId||'etfSearch')?.value||'').toLowerCase();
   return ETF_DB.filter(e=>{
     const cOk=activeCategory==='all'
       ||(activeCategory==='popular'?POPULAR_ETFS.includes(e.t):e.cat===activeCategory);
@@ -3345,10 +3408,9 @@ function getFiltered(){
     return 0;
   });
 }
-function renderETFList(){
-  const list=document.getElementById('etfList');
-  const etfs=getFiltered();
-  list.innerHTML=etfs.map(e=>{
+function buildETFListHTML(etfs){
+  if(!etfs.length) return '<div style="padding:20px;color:var(--text-dim);font-size:12px;text-align:center;">No ETFs found</div>';
+  return etfs.map(e=>{
     const sel=selectedETFs.includes(e.t);
     const idx=selectedETFs.indexOf(e.t);
     const color=idx>=0?COLORS[idx]:'var(--text-dim)';
@@ -3370,11 +3432,18 @@ function renderETFList(){
       <div class="check-box">${sel?'✓':''}</div>
       <div class="etf-color-dot" style="background:${color}"></div>
       <span class="etf-ticker" style="color:${sel?color:'var(--text)'}">${e.t}</span>
-      <span class="etf-name">${e.n}</span>
+      <span class="etf-name" title="${e.n.replace(/"/g,'&quot;')}">${e.n}</span>
       ${chgStr}
     </div>`;
   }).join('');
-  if(!etfs.length) list.innerHTML='<div style="padding:20px;color:var(--text-dim);font-size:12px;text-align:center;">No ETFs found</div>';
+}
+function renderETFList(){
+  const desktopList=document.getElementById('etfList');
+  if(desktopList) desktopList.innerHTML=buildETFListHTML(getFiltered('etfSearch'));
+  const mobileList=document.getElementById('etfListMobile');
+  if(mobileList) mobileList.innerHTML=buildETFListHTML(getFiltered('etfSearchMobile'));
+  const modalCount=document.getElementById('etfModalCount');
+  if(modalCount) modalCount.textContent=`${selectedETFs.length}/8 selected`;
 }
 
 async function toggleETF(ticker){
@@ -4269,17 +4338,47 @@ document.querySelectorAll('.chart-tab').forEach(btn=>{
     btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
   });
 });
-document.getElementById('catFilter').addEventListener('click',e=>{
+function handleCatFilterClick(e){
   if(!e.target.matches('.cat-btn')) return;
-  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
-  e.target.classList.add('active');
   activeCategory=e.target.dataset.cat;
+  document.querySelectorAll('.cat-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.cat===activeCategory);
+  });
   saveState();
   renderETFList();
-});
+}
+document.getElementById('catFilter').addEventListener('click',handleCatFilterClick);
+document.getElementById('catFilterMobile').addEventListener('click',handleCatFilterClick);
 document.getElementById('etfSearch').addEventListener('input',renderETFList);
 document.getElementById('etfSearch').addEventListener('keydown',e=>{
   if(e.key==='Escape'){e.target.value='';renderETFList();}
+});
+document.getElementById('etfSearchMobile').addEventListener('input',renderETFList);
+document.getElementById('etfSearchMobile').addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.target.value='';renderETFList();}
+});
+
+// ─── Mobile full-screen ETF selector modal ─────────────────────────────────────
+function openETFModal(){
+  document.getElementById('etfModalOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+  renderETFList();
+  setTimeout(()=>document.getElementById('etfSearchMobile').focus(),50);
+}
+function closeETFModal(){
+  document.getElementById('etfModalOverlay').classList.remove('open');
+  document.body.style.overflow='';
+}
+document.getElementById('mobileEditEtfsBtn').addEventListener('click',openETFModal);
+document.getElementById('etfModalClose').addEventListener('click',closeETFModal);
+document.getElementById('etfModalDone').addEventListener('click',closeETFModal);
+document.getElementById('etfModalOverlay').addEventListener('click',e=>{
+  if(e.target.id==='etfModalOverlay') closeETFModal();
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&document.getElementById('etfModalOverlay').classList.contains('open')){
+    closeETFModal();
+  }
 });
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -4341,6 +4440,8 @@ if(saved){
   selectedETFs=['VAS','SPY','QQQ'];
   applyTheme(true);
 }
+updateChips();
+renderETFList();
 </script>
 </body>
 </html>
