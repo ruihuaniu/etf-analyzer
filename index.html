@@ -487,6 +487,7 @@ let analyticsBenchmark='SPY';
 let portfolioWeights={}; // {ticker: weightPercent}
 let dcaAmount=500;
 let dcaFrequency='monthly';
+let dcaPeriod='max';
 // Cache: { "SPY_1y": { prices, dates, source } }
 const dataCache={};
 
@@ -3202,10 +3203,14 @@ function computeStatsFromReturns(rets){
 }
 
 // DCA / lump-sum simulator: invests `amount` at a fixed cadence into a weighted
-// blend of the given datasets' full price history, then tracks portfolio value.
+// blend of the given datasets' price history, then tracks portfolio value.
 // frequency: 'weekly' (5 trading days) | 'monthly' (~21 trading days)
-function simulateDCA(datasets,weights,amount,frequency){
-  const minLen=Math.min(...datasets.map(d=>d.fullPrices.length));
+// period: trailing window to simulate over — '1y'|'3y'|'5y'|'10y'|'max' (defaults to all available history)
+const DCA_PERIOD_DAYS={'1y':252,'3y':756,'5y':1260,'10y':2520,'max':Infinity};
+function simulateDCA(datasets,weights,amount,frequency,period='max'){
+  const fullMinLen=Math.min(...datasets.map(d=>d.fullPrices.length));
+  const windowDays=DCA_PERIOD_DAYS[period]??Infinity;
+  const minLen=Math.min(fullMinLen,windowDays);
   const dates=datasets[0].fullDates.slice(-minLen);
   const priceSeries=datasets.map(d=>d.fullPrices.slice(-minLen));
   const step=frequency==='weekly'?5:21;
@@ -4032,6 +4037,15 @@ function renderPortfolio(container,datasets){
             <option value="monthly" ${dcaFrequency==='monthly'?'selected':''}>Monthly</option>
           </select>
         </div>
+        <div class="dca-field"><label>PERIOD</label>
+          <select id="dcaPeriodInput">
+            <option value="1y" ${dcaPeriod==='1y'?'selected':''}>Last 1 Year</option>
+            <option value="3y" ${dcaPeriod==='3y'?'selected':''}>Last 3 Years</option>
+            <option value="5y" ${dcaPeriod==='5y'?'selected':''}>Last 5 Years</option>
+            <option value="10y" ${dcaPeriod==='10y'?'selected':''}>Last 10 Years</option>
+            <option value="max" ${dcaPeriod==='max'?'selected':''}>Max History</option>
+          </select>
+        </div>
         <button class="weight-btn" id="dcaRunBtn" style="height:34px;padding:0 16px;">RUN SIMULATION</button>
       </div>
       <div class="dca-summary" id="dcaSummary"></div>
@@ -4146,12 +4160,16 @@ function renderPortfolio(container,datasets){
     datasets.forEach(d=>{ normW[d.ticker]=sum>0?(portfolioWeights[d.ticker]/sum)*100:0; });
     const amount=Math.max(1,+document.getElementById('dcaAmountInput').value||500);
     const freq=document.getElementById('dcaFreqInput').value;
-    dcaAmount=amount;dcaFrequency=freq;
+    const period=document.getElementById('dcaPeriodInput').value;
+    dcaAmount=amount;dcaFrequency=freq;dcaPeriod=period;
     saveState();
 
-    const res=simulateDCA(datasets,normW,amount,freq);
+    const res=simulateDCA(datasets,normW,amount,freq,period);
+    const startLabel=res.dates[0]||'—';
     const ds=document.getElementById('dcaSummary');
     ds.innerHTML=`
+      <div class="dca-summary-cell"><div class="dca-summary-label">INVESTING SINCE</div>
+        <div class="dca-summary-value" style="font-size:15px;">${startLabel}</div></div>
       <div class="dca-summary-cell"><div class="dca-summary-label">TOTAL INVESTED</div>
         <div class="dca-summary-value">$${res.totalInvested.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
       <div class="dca-summary-cell"><div class="dca-summary-label">FINAL VALUE</div>
@@ -4162,6 +4180,11 @@ function renderPortfolio(container,datasets){
         <div class="dca-summary-value ${res.gainPct>=0?'pos':'neg'}">${res.gainPct>=0?'+':''}${res.gainPct.toFixed(1)}%</div></div>`;
 
     if(chartInstances.dca) chartInstances.dca.destroy();
+    if(!res.dates.length){
+      document.getElementById('dcaChart').parentElement.innerHTML=
+        '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">No price history available for this period.</div>';
+      return;
+    }
     const step=Math.max(1,Math.floor(res.dates.length/120));
     const labels=res.dates.filter((_,i)=>i%step===0||i===res.dates.length-1);
     chartInstances.dca=new Chart(document.getElementById('dcaChart'),{type:'line',data:{
@@ -4180,6 +4203,7 @@ function renderPortfolio(container,datasets){
   }
   runDCA();
   document.getElementById('dcaRunBtn').addEventListener('click',runDCA);
+  document.getElementById('dcaPeriodInput').addEventListener('change',runDCA);
 }
 
 function renderTable(container,datasets){
@@ -4274,7 +4298,7 @@ function saveState(){
   try{
     localStorage.setItem(LS_KEY,JSON.stringify({
       selectedETFs,activePeriod,activeView,activeCategory,isLight,analyticsBenchmark,
-      portfolioWeights,dcaAmount,dcaFrequency
+      portfolioWeights,dcaAmount,dcaFrequency,dcaPeriod
     }));
   }catch(e){}
 }
@@ -4297,6 +4321,7 @@ if(saved){
   portfolioWeights=saved.portfolioWeights||{};
   dcaAmount=saved.dcaAmount||500;
   dcaFrequency=saved.dcaFrequency||'monthly';
+  dcaPeriod=saved.dcaPeriod||'max';
   // Restore period button UI
   document.querySelectorAll('.period-btn').forEach(b=>{
     b.classList.toggle('active',b.dataset.period===activePeriod);
