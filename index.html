@@ -175,6 +175,45 @@
   .etf-item:focus:not(:focus-visible){outline:none;}
   /* Selected count badge */
   .selected-count{font-size:10px;color:var(--text-dim);letter-spacing:1px;padding:4px 0;}
+  /* Correlation matrix */
+  .corr-wrap{overflow-x:auto;padding:4px 20px 20px;}
+  .corr-table{border-collapse:collapse;font-size:11px;}
+  .corr-table th,.corr-table td{padding:8px 10px;text-align:center;border:1px solid var(--border);white-space:nowrap;}
+  .corr-table th{color:var(--text-muted);font-weight:500;background:var(--surface);font-size:10px;letter-spacing:.5px;}
+  .corr-table td.diag{color:var(--text-dim);background:var(--surface);}
+  .corr-table td{font-family:var(--mono);font-weight:500;}
+  .corr-legend{display:flex;align-items:center;gap:8px;padding:0 20px 16px;font-size:10px;color:var(--text-muted);letter-spacing:.5px;}
+  .corr-legend-bar{width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#60c8f0,#1e2028 50%,#f06080);}
+  :root.light .corr-legend-bar{background:linear-gradient(90deg,#60c8f0,#dddee6 50%,#cc2244);}
+  /* Benchmark select */
+  .bench-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;cursor:pointer;outline:none;}
+  .overlap-warning{display:flex;align-items:flex-start;gap:10px;background:rgba(240,192,96,.08);border:1px solid rgba(240,192,96,.25);border-radius:8px;padding:12px 16px;font-size:11px;color:var(--text-muted);line-height:1.6;margin:0 32px;}
+  .overlap-warning b{color:var(--accent4);}
+  /* Portfolio weighting */
+  .weight-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .weight-row:last-child{border-bottom:none;}
+  .weight-ticker{display:flex;align-items:center;gap:8px;width:90px;flex-shrink:0;font-weight:500;font-size:12px;}
+  .weight-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .weight-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--surface2);outline:none;cursor:pointer;}
+  .weight-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--text);cursor:pointer;border:2px solid var(--bg);}
+  .weight-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--text);cursor:pointer;border:2px solid var(--bg);}
+  .weight-input{width:54px;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 6px;border-radius:4px;text-align:right;outline:none;}
+  .weight-pct{font-size:11px;color:var(--text-dim);width:14px;}
+  .weight-total{display:flex;justify-content:space-between;align-items:center;padding:14px 0 4px;font-size:11px;}
+  .weight-total-bad{color:#f06080;}
+  .weight-total-good{color:#60f0b0;}
+  .weight-actions{display:flex;gap:8px;margin-top:10px;}
+  .weight-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text-muted);font-family:var(--mono);font-size:10px;padding:6px 12px;border-radius:4px;cursor:pointer;letter-spacing:.5px;transition:all .15s;}
+  .weight-btn:hover{color:var(--text);border-color:var(--text-dim);}
+  /* DCA simulator */
+  .dca-controls{display:flex;flex-wrap:wrap;gap:16px;padding:4px 20px 18px;align-items:flex-end;}
+  .dca-field{display:flex;flex-direction:column;gap:5px;}
+  .dca-field label{font-size:10px;color:var(--text-dim);letter-spacing:.5px;}
+  .dca-field input,.dca-field select{background:var(--surface);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:4px;outline:none;width:140px;}
+  .dca-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--border);margin:0 20px 16px;border-radius:8px;overflow:hidden;}
+  .dca-summary-cell{background:var(--surface);padding:14px 16px;}
+  .dca-summary-label{font-size:10px;color:var(--text-dim);letter-spacing:.5px;margin-bottom:4px;}
+  .dca-summary-value{font-size:18px;font-weight:600;font-family:var(--mono);}
 </style>
 </head>
 <body>
@@ -249,6 +288,8 @@
         <button class="chart-tab active" data-view="overview">Overview</button>
         <button class="chart-tab" data-view="performance">Performance</button>
         <button class="chart-tab" data-view="risk">Risk</button>
+        <button class="chart-tab" data-view="analytics">Analytics</button>
+        <button class="chart-tab" data-view="portfolio">Portfolio</button>
         <button class="chart-tab" data-view="table">Table</button>
       </div>
     </div>
@@ -377,6 +418,49 @@ const ETF_DB = [
 
 const COLORS=['#c8f060','#60c8f0','#f06080','#f0c060','#a060f0','#60f0b0','#f08060','#6080f0'];
 
+// ─── Asset-class exposure map ──────────────────────────────────────────────────
+// Approximate look-through exposure (% of fund) by broad asset class, based on each
+// fund's published strategy/benchmark. Single-asset-class ETFs are 100% their own
+// category. Diversified (multi-asset) Vanguard funds are decomposed using their
+// published target allocations so overlap can be detected even when price
+// correlation alone wouldn't catch it (e.g. VAS + VDHG both carry AU equity).
+const EXPOSURE_MAP = {
+  // Vanguard Diversified series — published target allocations (growth assets / defensive assets split)
+  VDCO:{auEq:.12,intlEq:.18,auBond:.42,intlBond:.28},
+  VDBA:{auEq:.20,intlEq:.30,auBond:.30,intlBond:.20},
+  VDGR:{auEq:.28,intlEq:.42,auBond:.18,intlBond:.12},
+  VDHG:{auEq:.37,intlEq:.53,auBond:.06,intlBond:.04},
+  VDAL:{auEq:.40,intlEq:.60},
+  VDIF:{auEq:.18,intlEq:.12,auBond:.40,intlBond:.30},
+  // Single asset-class funds
+  VAS:{auEq:1},VETH:{auEq:1},VHY:{auEq:1},VLC:{auEq:1},VSO:{auEq:1},
+  VGS:{intlEq:1},VGSH:{intlEq:1},VESG:{intlEq:1},VTS:{intlEq:1},VEU:{intlEq:1},
+  VIGH:{intlEq:1},VISM:{intlEq:1},VEQ:{intlEq:1},VAE:{intlEq:1},VGE:{intlEq:1},
+  VGT:{intlEq:1},VGTH:{intlEq:1},VMIN:{intlEq:1},VVLU:{intlEq:1},
+  VAF:{auBond:1},VACF:{auBond:1},VGB:{auBond:1},
+  VBND:{intlBond:1},VEFI:{intlBond:1},VIF:{intlBond:1},VICF:{intlBond:1},
+  VAP:{auReit:1},VBLD:{intlReit:1},
+  SPY:{intlEq:1},IVV:{intlEq:1},VOO:{intlEq:1},QQQ:{intlEq:1},VTI:{intlEq:1},
+  DIA:{intlEq:1},IWM:{intlEq:1},VUG:{intlEq:1},VTV:{intlEq:1},SCHB:{intlEq:1},
+  MGK:{intlEq:1},SCHA:{intlEq:1},
+  AGG:{intlBond:1},BND:{intlBond:1},TLT:{intlBond:1},SHY:{intlBond:1},IEF:{intlBond:1},
+  LQD:{intlBond:1},HYG:{intlBond:1},VCIT:{intlBond:1},TIPS:{intlBond:1},
+  XLK:{intlEq:1},XLF:{intlEq:1},XLE:{intlEq:1},XLV:{intlEq:1},XLY:{intlEq:1},
+  XLP:{intlEq:1},XLI:{intlEq:1},XLU:{intlEq:1},XLB:{intlEq:1},XLC:{intlEq:1},XLRE:{intlReit:1},
+  ARKK:{intlEq:1},SMH:{intlEq:1},IBB:{intlEq:1},SOXX:{intlEq:1},
+  VEA:{intlEq:1},VWO:{intlEq:1},EFA:{intlEq:1},EEM:{intlEq:1},IEFA:{intlEq:1},
+  EWJ:{intlEq:1},MCHI:{intlEq:1},VGK:{intlEq:1},FXI:{intlEq:1},
+  GLD:{commodity:1},SLV:{commodity:1},IAU:{commodity:1},USO:{commodity:1},
+  PDBC:{commodity:1},GLDM:{commodity:1},
+  VNQ:{intlReit:1},IYR:{intlReit:1},SCHH:{intlReit:1},
+  MTUM:{intlEq:1},QUAL:{intlEq:1},USMV:{intlEq:1},DGRO:{intlEq:1},VIG:{intlEq:1},
+  SCHD:{intlEq:1},NOBL:{intlEq:1},
+  IBIT:{crypto:1},FBTC:{crypto:1},GBTC:{crypto:1},ETHA:{crypto:1},
+  TQQQ:{intlEq:1},SPXL:{intlEq:1},SOXL:{intlEq:1},SQQQ:{intlEq:1},SSO:{intlEq:1},
+};
+const EXPOSURE_LABELS={auEq:'AU Equity',intlEq:'Intl/US Equity',auBond:'AU Bonds',
+  intlBond:'Intl/US Bonds',auReit:'AU Property',intlReit:'Intl/US Property',commodity:'Commodity',crypto:'Crypto'};
+
 // ─── State ────────────────────────────────────────────────────────────────────
 let selectedETFs=[];
 let activePeriod='1y';
@@ -384,6 +468,10 @@ let activeView='overview';
 let activeCategory='all';
 let chartInstances={};
 let isLight=true;
+let analyticsBenchmark='SPY';
+let portfolioWeights={}; // {ticker: weightPercent}
+let dcaAmount=500;
+let dcaFrequency='monthly';
 // Cache: { "SPY_1y": { prices, dates, source } }
 const dataCache={};
 
@@ -2935,6 +3023,253 @@ function rollingVol(prices,w=21){
   return vols;
 }
 
+// ─── Decision-relevant analytics helpers ──────────────────────────────────────
+function dailyReturns(prices){
+  const r=[];
+  for(let i=1;i<prices.length;i++) r.push((prices[i]-prices[i-1])/prices[i-1]);
+  return r;
+}
+// Pearson correlation between two return series, aligned to the shorter length (most recent overlap)
+function pearsonCorr(a,b){
+  const n=Math.min(a.length,b.length);
+  if(n<2) return null;
+  const x=a.slice(-n),y=b.slice(-n);
+  const mx=x.reduce((s,v)=>s+v,0)/n, my=y.reduce((s,v)=>s+v,0)/n;
+  let cov=0,vx=0,vy=0;
+  for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;cov+=dx*dy;vx+=dx*dx;vy+=dy*dy;}
+  if(vx===0||vy===0) return null;
+  return cov/Math.sqrt(vx*vy);
+}
+function correlationMatrix(datasets){
+  const rets=datasets.map(d=>dailyReturns(d.prices));
+  return datasets.map((_,i)=>datasets.map((__,j)=>i===j?1:pearsonCorr(rets[i],rets[j])));
+}
+function corrColor(v){
+  // -1 -> accent2 (blue), 0 -> neutral surface, +1 -> accent3 (red/pink)
+  if(v===null) return 'transparent';
+  const a=Math.abs(v);
+  if(v>=0) return `rgba(240,96,128,${(a*0.55).toFixed(2)})`;
+  return `rgba(96,200,240,${(a*0.55).toFixed(2)})`;
+}
+
+// Rolling N-trading-day return series (e.g. rolling 252d = rolling 12-month)
+function rollingReturns(prices,dates,window=252){
+  const out=[],labels=[];
+  for(let i=window;i<prices.length;i++){
+    out.push(((prices[i]/prices[i-window])-1)*100);
+    labels.push(dates[i]);
+  }
+  return{rets:out,labels};
+}
+
+// Identify drawdown episodes: each run from a peak down to trough and back to recovery.
+// Returns the worst N episodes with peak date, trough date, depth, recovery date (or 'Ongoing').
+function drawdownEpisodes(prices,dates,topN=5){
+  const episodes=[];
+  let peak=prices[0],peakIdx=0,inDD=false,troughIdx=0,troughVal=prices[0];
+  for(let i=1;i<prices.length;i++){
+    if(prices[i]>=peak){
+      if(inDD){
+        // recovered
+        episodes.push({peakIdx,troughIdx,recoverIdx:i,depth:((troughVal-peak)/peak)*100});
+        inDD=false;
+      }
+      peak=prices[i];peakIdx=i;
+    } else {
+      if(!inDD || prices[i]<troughVal){
+        if(!inDD){inDD=true;troughIdx=i;troughVal=prices[i];}
+        else if(prices[i]<troughVal){troughIdx=i;troughVal=prices[i];}
+      }
+    }
+  }
+  if(inDD){
+    episodes.push({peakIdx,troughIdx,recoverIdx:null,depth:((troughVal-peak)/peak)*100});
+  }
+  episodes.sort((a,b)=>a.depth-b.depth);
+  return episodes.slice(0,topN).map(e=>({
+    peakDate:dates[e.peakIdx],
+    troughDate:dates[e.troughIdx],
+    recoverDate:e.recoverIdx!=null?dates[e.recoverIdx]:null,
+    lengthDays:e.recoverIdx!=null?e.recoverIdx-e.peakIdx:null,
+    depth:e.depth
+  }));
+}
+
+// Benchmark options for correlation-to-benchmark
+const BENCHMARKS=[
+  {t:'SPY',label:'S&P 500 (SPY)'},
+  {t:'VAS',label:'ASX 300 (VAS)'},
+  {t:'QQQ',label:'Nasdaq-100 (QQQ)'},
+  {t:'AGG',label:'US Agg Bond (AGG)'}
+];
+
+// Overlap detection: flag pairs of selected ETFs whose underlying exposure
+// is highly correlated (>0.92) — signals likely redundant holdings.
+function detectOverlaps(datasets,corrMatrix){
+  const warnings=[];
+  for(let i=0;i<datasets.length;i++){
+    for(let j=i+1;j<datasets.length;j++){
+      const c=corrMatrix[i][j];
+      if(c!=null && c>=0.92){
+        warnings.push({a:datasets[i].ticker,b:datasets[j].ticker,corr:c});
+      }
+    }
+  }
+  return warnings;
+}
+
+// Exposure-based overlap detection: catches cases like VAS + VDHG where price
+// correlation alone may not flag the pair, but both funds carry meaningful
+// shared asset-class exposure (e.g. AU equity inside a diversified fund).
+function detectExposureOverlaps(tickers,threshold=0.15){
+  const warnings=[];
+  for(let i=0;i<tickers.length;i++){
+    for(let j=i+1;j<tickers.length;j++){
+      const a=EXPOSURE_MAP[tickers[i]],b=EXPOSURE_MAP[tickers[j]];
+      if(!a||!b) continue;
+      const keys=new Set([...Object.keys(a),...Object.keys(b)]);
+      let shared=0,worstKey=null,worstVal=0;
+      keys.forEach(k=>{
+        const overlap=Math.min(a[k]||0,b[k]||0);
+        shared+=overlap;
+        if(overlap>worstVal){worstVal=overlap;worstKey=k;}
+      });
+      if(shared>=threshold && worstKey){
+        warnings.push({a:tickers[i],b:tickers[j],shared,assetClass:EXPOSURE_LABELS[worstKey]||worstKey,assetShare:worstVal});
+      }
+    }
+  }
+  return warnings.sort((x,y)=>y.shared-x.shared);
+}
+
+// Blended portfolio exposure breakdown for a set of {ticker, weight} allocations
+function blendedExposure(allocations){
+  const total={};
+  allocations.forEach(({ticker,weight})=>{
+    const exp=EXPOSURE_MAP[ticker];
+    if(!exp) return;
+    Object.entries(exp).forEach(([k,v])=>{ total[k]=(total[k]||0)+v*weight; });
+  });
+  return total;
+}
+
+// ─── Portfolio-level tools ─────────────────────────────────────────────────────
+// Blend daily-return series into one weighted portfolio return series, aligned to
+// the shortest common length (most recent overlapping history across all funds).
+function blendPortfolioReturns(datasets,weights){
+  const minLen=Math.min(...datasets.map(d=>d.prices.length));
+  const retsByFund=datasets.map(d=>dailyReturns(d.prices.slice(-minLen)));
+  const n=retsByFund[0]?.length||0;
+  const blended=[];
+  for(let i=0;i<n;i++){
+    let r=0;
+    datasets.forEach((d,k)=>{ r+=(weights[d.ticker]||0)/100*retsByFund[k][i]; });
+    blended.push(r);
+  }
+  return blended;
+}
+// Rebuild an indexed price series (base 100) from a daily-return series
+function returnsToIndex(rets,base=100){
+  const idx=[base];
+  rets.forEach(r=>idx.push(idx[idx.length-1]*(1+r)));
+  return idx;
+}
+function computeStatsFromReturns(rets){
+  const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+  const variance=rets.reduce((a,b)=>a+(b-mean)**2,0)/rets.length;
+  const std=Math.sqrt(variance*252)*100;
+  const sharpe=(mean*252)/(Math.sqrt(variance)*Math.sqrt(252));
+  const idx=returnsToIndex(rets);
+  const total=(idx[idx.length-1]/idx[0]-1)*100;
+  let peak=idx[0],maxDD=0;
+  for(const p of idx){if(p>peak)peak=p;const dd=(peak-p)/peak;if(dd>maxDD)maxDD=dd;}
+  return{total,std,sharpe,maxDD:maxDD*100};
+}
+
+// DCA / lump-sum simulator: invests `amount` at a fixed cadence into a weighted
+// blend of the given datasets' full price history, then tracks portfolio value.
+// frequency: 'weekly' (5 trading days) | 'monthly' (~21 trading days)
+function simulateDCA(datasets,weights,amount,frequency){
+  const minLen=Math.min(...datasets.map(d=>d.fullPrices.length));
+  const dates=datasets[0].fullDates.slice(-minLen);
+  const priceSeries=datasets.map(d=>d.fullPrices.slice(-minLen));
+  const step=frequency==='weekly'?5:21;
+
+  const unitsHeld=datasets.map(()=>0);
+  let totalInvested=0;
+  const portfolioValueOverTime=[];
+  const investedOverTime=[];
+
+  for(let i=0;i<minLen;i++){
+    if(i%step===0){
+      datasets.forEach((d,k)=>{
+        const w=(weights[d.ticker]||0)/100;
+        if(w<=0) return;
+        const contribution=amount*w;
+        const price=priceSeries[k][i];
+        if(price>0){ unitsHeld[k]+=contribution/price; totalInvested+=contribution; }
+      });
+    }
+    let value=0;
+    datasets.forEach((d,k)=>{ value+=unitsHeld[k]*priceSeries[k][i]; });
+    portfolioValueOverTime.push(value);
+    investedOverTime.push(totalInvested);
+  }
+
+  const finalValue=portfolioValueOverTime[portfolioValueOverTime.length-1]||0;
+  const gain=finalValue-totalInvested;
+  const gainPct=totalInvested>0?(gain/totalInvested)*100:0;
+
+  return{dates,portfolioValueOverTime,investedOverTime,totalInvested,finalValue,gain,gainPct};
+}
+
+// Rolling Sharpe ratio over a trailing window (default 63 trading days ≈ 3 months)
+function rollingSharpe(prices,w=63){
+  const rets=dailyReturns(prices);
+  const out=[];
+  for(let i=w;i<=rets.length;i++){
+    const sl=rets.slice(i-w,i);
+    const mean=sl.reduce((a,b)=>a+b,0)/sl.length;
+    const variance=sl.reduce((a,b)=>a+(b-mean)**2,0)/sl.length;
+    const sd=Math.sqrt(variance);
+    out.push(sd===0?0:(mean*252)/(sd*Math.sqrt(252)));
+  }
+  return out;
+}
+
+// Calendar-year returns: group by Jan 1 → Dec 31 of each calendar year present in the data
+function calendarYearReturns(prices,dates){
+  const MONTHS={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+  function parseDate(s){
+    if(!s) return null;
+    const parts=s.replace(',','').split(' ').filter(Boolean);
+    const mon=MONTHS[parts[0]];
+    if(mon===undefined) return null;
+    if(parts.length===2){
+      const yy=parseInt(parts[1],10);
+      return new Date(yy<=50?2000+yy:1900+yy,mon,1);
+    }
+    if(parts.length===3){
+      const yy=parseInt(parts[2],10);
+      return new Date(yy<=50?2000+yy:1900+yy,mon,parseInt(parts[1],10));
+    }
+    return null;
+  }
+  const byYear={};
+  for(let i=0;i<dates.length;i++){
+    const d=parseDate(dates[i]);
+    if(!d||isNaN(d.getTime())) continue;
+    const y=d.getFullYear();
+    if(!byYear[y]) byYear[y]={first:prices[i],last:prices[i]};
+    byYear[y].last=prices[i];
+  }
+  const years=Object.keys(byYear).map(Number).sort((a,b)=>a-b);
+  return{
+    years,
+    rets:years.map(y=>((byYear[y].last/byYear[y].first)-1)*100)
+  };
+}
+
 // ─── Chart defaults ───────────────────────────────────────────────────────────
 function updateChartDefaults(){
   Chart.defaults.color=isLight?'#5a5e72':'#6b7080';
@@ -3099,6 +3434,8 @@ async function renderContent(){
     if(activeView==='overview') renderOverview(container,datasets);
     else if(activeView==='performance') renderPerformance(container,datasets);
     else if(activeView==='risk') renderRisk(container,datasets);
+    else if(activeView==='analytics') renderAnalytics(container,datasets);
+    else if(activeView==='portfolio') renderPortfolio(container,datasets);
     else renderTable(container,datasets);
   };
 
@@ -3367,6 +3704,232 @@ function renderRisk(container,datasets){
       y:{grid:{color:gc},ticks:{color:tc,callback:v=>v.toFixed(1)+'%'}}}}});
 }
 
+// ─── Analytics ────────────────────────────────────────────────────────────────
+async function renderAnalytics(container,datasets){
+  const benchOptions=BENCHMARKS.map(b=>`<option value="${b.t}" ${b.t===analyticsBenchmark?'selected':''}>${b.label}</option>`).join('');
+  container.innerHTML=`<div class="charts-area">
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Correlation Matrix</div>
+        <div class="chart-card-sub">Pairwise correlation of daily returns over selected period</div>
+      </div></div>
+      <div id="overlapWarnings"></div>
+      <div class="corr-wrap"><table class="corr-table" id="corrTable"></table></div>
+      <div class="corr-legend"><span>−1 (diversifying)</span><div class="corr-legend-bar"></div><span>+1 (redundant)</span></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Rolling 12-Month Return</div>
+        <div class="chart-card-sub">Return over any trailing 252 trading days — shows best/worst windows, not just one snapshot</div>
+      </div></div>
+      <div class="chart-wrapper" style="height:280px"><canvas id="rollRetChart"></canvas></div>
+    </div>
+
+    <div class="two-col-charts">
+      <div class="chart-card">
+        <div class="chart-card-header"><div>
+          <div class="chart-card-title">Drawdown Episodes</div>
+          <div class="chart-card-sub">Worst peak-to-trough declines &amp; recovery time</div>
+        </div></div>
+        <div id="ddEpisodes" style="padding:4px 20px 18px;"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header"><div>
+          <div class="chart-card-title">Correlation to Benchmark</div>
+          <div class="chart-card-sub">How closely each ETF tracks a reference index</div>
+        </div>
+        <select class="bench-select" id="benchSelect">${benchOptions}</select>
+        </div>
+        <div class="chart-wrapper" style="height:240px"><canvas id="benchCorrBar"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Rolling Sharpe Ratio</div>
+        <div class="chart-card-sub">Risk-adjusted return over a trailing 3-month window — shows whether edge is consistent or a one-off spike</div>
+      </div></div>
+      <div class="chart-wrapper" style="height:260px"><canvas id="rollSharpeChart"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Calendar-Year Returns</div>
+        <div class="chart-card-sub">Return for each full calendar year — easier to read than one blended period figure</div>
+      </div></div>
+      <div class="chart-wrapper" style="height:280px"><canvas id="calYearChart"></canvas></div>
+    </div>
+
+  </div>`;
+
+  const gc=isLight?'#dddee6':'#1e2028',tc=isLight?'#5a5e72':'#6b7080';
+  const tt={backgroundColor:isLight?'#ffffff':'#161820',borderColor:isLight?'#dddee6':'#2a2d38',borderWidth:1,
+    titleColor:isLight?'#14161e':'#e8eaf0',bodyColor:isLight?'#5a5e72':'#a0a4b8'};
+
+  // ── Correlation matrix ──
+  const cm=correlationMatrix(datasets);
+  const ct=document.getElementById('corrTable');
+  let thead='<tr><th></th>'+datasets.map(d=>`<th style="color:${d.color}">${d.ticker}</th>`).join('')+'</tr>';
+  let rows=datasets.map((d,i)=>{
+    const cells=datasets.map((_,j)=>{
+      if(i===j) return `<td class="diag">1.00</td>`;
+      const v=cm[i][j];
+      if(v===null) return `<td class="diag">—</td>`;
+      return `<td style="background:${corrColor(v)};color:${isLight?'#14161e':'#e8eaf0'}">${v.toFixed(2)}</td>`;
+    }).join('');
+    return `<tr><th style="color:${d.color};text-align:left">${d.ticker}</th>${cells}</tr>`;
+  }).join('');
+  ct.innerHTML=thead+rows;
+
+  // ── Overlap warnings (price correlation + underlying asset-class exposure) ──
+  const corrOverlaps=detectOverlaps(datasets,cm);
+  const expOverlaps=detectExposureOverlaps(datasets.map(d=>d.ticker));
+  const ow=document.getElementById('overlapWarnings');
+  const corrPairs=new Set(corrOverlaps.map(o=>[o.a,o.b].sort().join('|')));
+  const expOnly=expOverlaps.filter(o=>!corrPairs.has([o.a,o.b].sort().join('|')));
+  const allWarnings=[
+    ...corrOverlaps.map(o=>
+      `⚠ <span><b>${o.a} &amp; ${o.b}</b> are ${(o.corr*100).toFixed(0)}% price-correlated — holding both likely adds limited diversification.</span>`),
+    ...expOnly.map(o=>
+      `⚠ <span><b>${o.a} &amp; ${o.b}</b> both carry significant <b>${o.assetClass}</b> exposure (~${(o.assetShare*100).toFixed(0)}% of one fund) — check you're not unintentionally doubling up on this asset class.</span>`)
+  ];
+  ow.innerHTML=allWarnings.length
+    ? allWarnings.map(w=>`<div class="overlap-warning" style="margin-bottom:10px;">${w}</div>`).join('')
+    : '';
+
+  // ── Rolling 12M return ──
+  const rrData=datasets.map(d=>rollingReturns(d.fullPrices,d.fullDates,252));
+  const hasRolling=rrData.some(r=>r.rets.length>0);
+  if(hasRolling){
+    const maxLen=Math.max(...rrData.map(r=>r.labels.length));
+    const ref=rrData.find(r=>r.labels.length===maxLen);
+    const step=Math.max(1,Math.floor(maxLen/80));
+    const labels=ref.labels.filter((_,i)=>i%step===0||i===maxLen-1);
+    chartInstances.rollRet=new Chart(document.getElementById('rollRetChart'),{type:'line',data:{
+      labels,
+      datasets:datasets.map((d,i)=>{
+        const r=rrData[i];
+        const pad=maxLen-r.rets.length;
+        const padded=Array(pad).fill(null).concat(r.rets);
+        return{label:d.ticker,
+          data:padded.filter((_,k)=>k%step===0||k===maxLen-1),
+          borderColor:d.color,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.25,spanGaps:true};
+      })
+    },options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
+        tooltip:{...tt,callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y>=0?'+':''}${ctx.parsed.y.toFixed(2)}%`}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,maxRotation:0,maxTicksLimit:8}},
+        y:{grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}}}}});
+  } else {
+    document.getElementById('rollRetChart').parentElement.innerHTML=
+      '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">Need 12+ months of data for this period to compute rolling returns. Try a longer period (3Y, 5Y, 10Y, MAX).</div>';
+  }
+
+  // ── Drawdown episodes ──
+  const ddc=document.getElementById('ddEpisodes');
+  ddc.innerHTML=datasets.map(d=>{
+    const eps=drawdownEpisodes(d.fullPrices,d.fullDates,3);
+    const rows=eps.map(e=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;">
+        <span style="color:var(--text-muted)">${e.peakDate} → ${e.troughDate}</span>
+        <span class="neg" style="font-weight:500">${e.depth.toFixed(1)}%</span>
+        <span style="color:var(--text-dim)">${e.recoverDate?`Recovered ${e.recoverDate}`:'Ongoing'}</span>
+      </div>`).join('');
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${d.color};display:inline-block"></span>
+        <span style="font-weight:500;font-size:12px;">${d.ticker}</span>
+      </div>
+      ${rows||'<div style="color:var(--text-dim);font-size:11px;padding:6px 0;">No drawdowns in this window</div>'}
+    </div>`;
+  }).join('');
+
+  // ── Correlation to benchmark ──
+  function renderBenchChart(){
+    const benchTicker=analyticsBenchmark;
+    const benchDS=datasets.find(d=>d.ticker===benchTicker);
+    const benchPrices=benchDS?benchDS.fullPrices:(buildFromMonthly(benchTicker,'max')||{}).prices;
+    if(chartInstances.benchCorr) chartInstances.benchCorr.destroy();
+    if(!benchPrices){
+      document.getElementById('benchCorrBar').parentElement.innerHTML=
+        '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">Benchmark data unavailable.</div>';
+      return;
+    }
+    const benchRets=dailyReturns(benchPrices);
+    const vals=datasets.map(d=>{
+      if(d.ticker===benchTicker) return 1;
+      const c=pearsonCorr(dailyReturns(d.fullPrices),benchRets);
+      return c===null?0:+c.toFixed(2);
+    });
+    chartInstances.benchCorr=new Chart(document.getElementById('benchCorrBar'),{type:'bar',data:{
+      labels:datasets.map(d=>d.ticker),
+      datasets:[{data:vals,backgroundColor:datasets.map(d=>d.color+'cc'),borderColor:datasets.map(d=>d.color),borderWidth:1,borderRadius:4}]
+    },options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{...tt,callbacks:{label:ctx=>` r = ${ctx.parsed.x}`}}},
+      scales:{x:{min:-1,max:1,grid:{color:gc},ticks:{color:tc}},y:{grid:{color:gc},ticks:{color:tc}}}}});
+  }
+  renderBenchChart();
+  document.getElementById('benchSelect').addEventListener('change',e=>{
+    analyticsBenchmark=e.target.value;
+    saveState();
+    renderBenchChart();
+  });
+
+  // ── Rolling Sharpe ratio ──
+  const rsWindow=63;
+  const rsData=datasets.map(d=>rollingSharpe(d.fullPrices,rsWindow));
+  const hasRS=rsData.some(r=>r.length>0);
+  if(hasRS){
+    const maxLenRS=Math.max(...rsData.map(r=>r.length));
+    const refDS=datasets.find((d,i)=>rsData[i].length===maxLenRS);
+    const fullLabelsRS=refDS.fullDates.slice(rsWindow);
+    const stepRS=Math.max(1,Math.floor(maxLenRS/80));
+    const labelsRS=fullLabelsRS.filter((_,i)=>i%stepRS===0||i===maxLenRS-1);
+    chartInstances.rollSharpe=new Chart(document.getElementById('rollSharpeChart'),{type:'line',data:{
+      labels:labelsRS,
+      datasets:datasets.map((d,i)=>{
+        const r=rsData[i];
+        const pad=maxLenRS-r.length;
+        const padded=Array(pad).fill(null).concat(r);
+        return{label:d.ticker,
+          data:padded.filter((_,k)=>k%stepRS===0||k===maxLenRS-1).map(v=>v===null?null:+v.toFixed(2)),
+          borderColor:d.color,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:.25,spanGaps:true};
+      })
+    },options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
+        tooltip:{...tt,callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}`}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,maxRotation:0,maxTicksLimit:8}},
+        y:{grid:{color:gc},ticks:{color:tc}}}}});
+  } else {
+    document.getElementById('rollSharpeChart').parentElement.innerHTML=
+      '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">Need more data points for this period to compute a rolling Sharpe ratio. Try a longer period.</div>';
+  }
+
+  // ── Calendar-year returns ──
+  const cyrData=datasets.map(d=>calendarYearReturns(d.fullPrices,d.fullDates));
+  const allYears=[...new Set(cyrData.flatMap(c=>c.years))].sort((a,b)=>a-b);
+  if(allYears.length){
+    chartInstances.calYear=new Chart(document.getElementById('calYearChart'),{type:'bar',data:{
+      labels:allYears.map(String),
+      datasets:datasets.map((d,i)=>{
+        const c=cyrData[i];
+        const map={};
+        c.years.forEach((y,k)=>map[y]=c.rets[k]);
+        return{label:d.ticker,data:allYears.map(y=>map[y]!=null?+map[y].toFixed(2):null),
+          backgroundColor:d.color+'bb',borderColor:d.color,borderWidth:1,borderRadius:3};
+      })
+    },options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
+        tooltip:{...tt,callbacks:{label:ctx=>ctx.parsed.y==null?` ${ctx.dataset.label}: n/a`:` ${ctx.dataset.label}: ${ctx.parsed.y>=0?'+':''}${ctx.parsed.y}%`}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc}},y:{grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}}}}});
+  } else {
+    document.getElementById('calYearChart').parentElement.innerHTML=
+      '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">No full calendar years in this period. Try a longer period (3Y, 5Y, 10Y, MAX).</div>';
+  }
+}
+
 // ─── Table ────────────────────────────────────────────────────────────────────
 const CAT_LABELS={'au-equity':'AU Equity','au-bond':'AU Bond','diversified':'Diversified',
   'equity':'US Equity','bond':'US Bond','sector':'Sector','intl':'Intl','commodity':'Commodity',
@@ -3385,6 +3948,223 @@ function exportCSV(datasets){
   const a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
   a.download='etf-comparison.csv';a.click();
+}
+
+// ─── Portfolio ──────────────────────────────────────────────────────────────
+function normalizeWeights(datasets){
+  // Ensure every selected ticker has a weight; default to equal-weight on first load
+  // or when a ticker is missing (e.g. just added).
+  const tickers=datasets.map(d=>d.ticker);
+  const missing=tickers.filter(t=>portfolioWeights[t]==null);
+  if(missing.length){
+    const evenW=+(100/tickers.length).toFixed(1);
+    tickers.forEach(t=>{ if(portfolioWeights[t]==null) portfolioWeights[t]=evenW; });
+  }
+  // Drop weights for tickers no longer selected
+  Object.keys(portfolioWeights).forEach(t=>{ if(!tickers.includes(t)) delete portfolioWeights[t]; });
+}
+function equalWeight(datasets){
+  const w=+(100/datasets.length).toFixed(1);
+  datasets.forEach((d,i)=>{ portfolioWeights[d.ticker]=i===datasets.length-1?+(100-w*(datasets.length-1)).toFixed(1):w; });
+}
+
+function renderPortfolio(container,datasets){
+  if(datasets.length<2){
+    container.innerHTML=`<div class="charts-area"><div class="chart-card">
+      <div style="padding:40px;text-align:center;color:var(--text-dim);font-size:12px;">
+        Select at least 2 ETFs to build a weighted portfolio.
+      </div></div></div>`;
+    return;
+  }
+  normalizeWeights(datasets);
+
+  container.innerHTML=`<div class="charts-area">
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Portfolio Allocation</div>
+        <div class="chart-card-sub">Set a weight per ETF — must total 100%</div>
+      </div></div>
+      <div style="padding:4px 20px 8px;">
+        <div id="weightRows"></div>
+        <div class="weight-total" id="weightTotal"></div>
+        <div class="weight-actions">
+          <button class="weight-btn" id="equalWeightBtn">EQUAL WEIGHT</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="portfolioStatsGrid"></div>
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Blended Portfolio vs Individual ETFs</div>
+        <div class="chart-card-sub">Indexed to 100 — how your weighted mix performs against each holding alone</div>
+      </div></div>
+      <div class="chart-wrapper" style="height:320px"><canvas id="portfolioLineChart"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-card-header"><div>
+        <div class="chart-card-title">Dollar-Cost Averaging Simulator</div>
+        <div class="chart-card-sub">Invest a fixed amount on a regular schedule into this weighted mix, using full available history</div>
+      </div></div>
+      <div class="dca-controls">
+        <div class="dca-field"><label>AMOUNT (AUD)</label><input type="number" id="dcaAmountInput" value="${dcaAmount}" min="1" step="50"></div>
+        <div class="dca-field"><label>FREQUENCY</label>
+          <select id="dcaFreqInput">
+            <option value="weekly" ${dcaFrequency==='weekly'?'selected':''}>Weekly</option>
+            <option value="monthly" ${dcaFrequency==='monthly'?'selected':''}>Monthly</option>
+          </select>
+        </div>
+        <button class="weight-btn" id="dcaRunBtn" style="height:34px;padding:0 16px;">RUN SIMULATION</button>
+      </div>
+      <div class="dca-summary" id="dcaSummary"></div>
+      <div class="chart-wrapper" style="height:280px"><canvas id="dcaChart"></canvas></div>
+    </div>
+
+  </div>`;
+
+  // ── Weight rows ──
+  const wr=document.getElementById('weightRows');
+  function paintWeightRows(){
+    wr.innerHTML=datasets.map((d,i)=>`
+      <div class="weight-row">
+        <div class="weight-ticker"><span class="weight-dot" style="background:${d.color}"></span>${d.ticker}</div>
+        <input type="range" class="weight-slider" min="0" max="100" step="0.5" value="${portfolioWeights[d.ticker]}" data-ticker="${d.ticker}">
+        <input type="number" class="weight-input" min="0" max="100" step="0.5" value="${portfolioWeights[d.ticker]}" data-ticker="${d.ticker}">
+        <span class="weight-pct">%</span>
+      </div>`).join('');
+    paintTotal();
+  }
+  function paintTotal(){
+    const sum=datasets.reduce((s,d)=>s+(+portfolioWeights[d.ticker]||0),0);
+    const wt=document.getElementById('weightTotal');
+    const ok=Math.abs(sum-100)<0.6;
+    wt.innerHTML=`<span>Total allocation</span><span class="${ok?'weight-total-good':'weight-total-bad'}">${sum.toFixed(1)}%${ok?' ✓':' — must equal 100%'}</span>`;
+    return ok;
+  }
+  function syncRow(ticker,val){
+    portfolioWeights[ticker]=Math.max(0,Math.min(100,+val||0));
+    wr.querySelectorAll(`[data-ticker="${ticker}"]`).forEach(el=>{ el.value=portfolioWeights[ticker]; });
+    paintTotal();
+  }
+  paintWeightRows();
+
+  wr.addEventListener('input',e=>{
+    const t=e.target.dataset.ticker;
+    if(!t) return;
+    syncRow(t,e.target.value);
+  });
+  wr.addEventListener('change',()=>{ saveState(); renderPortfolioOutputs(); });
+
+  document.getElementById('equalWeightBtn').addEventListener('click',()=>{
+    equalWeight(datasets);
+    paintWeightRows();
+    saveState();
+    renderPortfolioOutputs();
+  });
+
+  // ── Stats + blended chart + exposure check ──
+  const gc=isLight?'#dddee6':'#1e2028',tc=isLight?'#5a5e72':'#6b7080';
+  const tt={backgroundColor:isLight?'#ffffff':'#161820',borderColor:isLight?'#dddee6':'#2a2d38',borderWidth:1,
+    titleColor:isLight?'#14161e':'#e8eaf0',bodyColor:isLight?'#5a5e72':'#a0a4b8'};
+
+  function renderPortfolioOutputs(){
+    const sum=datasets.reduce((s,d)=>s+(+portfolioWeights[d.ticker]||0),0);
+    const normW={};
+    datasets.forEach(d=>{ normW[d.ticker]=sum>0?(portfolioWeights[d.ticker]/sum)*100:0; });
+
+    const blendedRets=blendPortfolioReturns(datasets,normW);
+    const pStats=computeStatsFromReturns(blendedRets);
+    const pIndex=returnsToIndex(blendedRets);
+
+    const sg=document.getElementById('portfolioStatsGrid');
+    const bestSingle=[...datasets].sort((a,b)=>b.stats.total-a.stats.total)[0];
+    sg.innerHTML=`
+      <div class="stat-card"><div class="stat-card-label">Blended Return</div>
+        <div class="stat-card-value ${pStats.total>=0?'pos':'neg'}">${pStats.total>=0?'+':''}${pStats.total.toFixed(2)}%</div>
+        <div class="stat-card-sub">Weighted portfolio, period total</div></div>
+      <div class="stat-card"><div class="stat-card-label">Blended Volatility</div>
+        <div class="stat-card-value">${pStats.std.toFixed(2)}%</div>
+        <div class="stat-card-sub">Annualised</div></div>
+      <div class="stat-card"><div class="stat-card-label">Blended Sharpe</div>
+        <div class="stat-card-value">${pStats.sharpe.toFixed(2)}</div>
+        <div class="stat-card-sub">Risk-adjusted</div></div>
+      <div class="stat-card"><div class="stat-card-label">Blended Max DD</div>
+        <div class="stat-card-value neg">-${pStats.maxDD.toFixed(2)}%</div>
+        <div class="stat-card-sub">Peak-to-trough</div></div>
+      <div class="stat-card"><div class="stat-card-label">Best Single Holding</div>
+        <div class="stat-card-value" style="color:${bestSingle.color}">${bestSingle.ticker}</div>
+        <div class="stat-card-sub">${bestSingle.stats.total>=0?'+':''}${bestSingle.stats.total.toFixed(2)}% alone</div></div>
+      <div class="stat-card"><div class="stat-card-label">Diversification Effect</div>
+        <div class="stat-card-value ${pStats.std<=Math.max(...datasets.map(d=>d.stats.std))?'pos':'neg'}">
+          ${(Math.max(...datasets.map(d=>d.stats.std))-pStats.std).toFixed(2)}%</div>
+        <div class="stat-card-sub">Vol reduction vs highest single ETF</div></div>`;
+
+    if(chartInstances.portfolioLine) chartInstances.portfolioLine.destroy();
+    const minLen=Math.min(...datasets.map(d=>d.prices.length));
+    const sampStep=Math.max(1,Math.floor(minLen/100));
+    const sl=datasets[0].dates.slice(-minLen).filter((_,i)=>i%sampStep===0||i===minLen-1);
+    const pIndexAligned=pIndex.slice(-minLen);
+    chartInstances.portfolioLine=new Chart(document.getElementById('portfolioLineChart'),{type:'line',data:{
+      labels:sl,
+      datasets:[
+        {label:'Portfolio',data:pIndexAligned.filter((_,i)=>i%sampStep===0||i===minLen-1),
+          borderColor:isLight?'#14161e':'#ffffff',backgroundColor:'transparent',borderWidth:3,pointRadius:0,tension:.3,order:0},
+        ...datasets.map(d=>({label:d.ticker,
+          data:d.norm.slice(-minLen).filter((_,i)=>i%sampStep===0||i===minLen-1),
+          borderColor:d.color+'90',backgroundColor:'transparent',borderWidth:1,borderDash:[3,3],pointRadius:0,tension:.3,order:1}))
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
+        tooltip:{...tt,callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,maxRotation:0,maxTicksLimit:8}},
+        y:{grid:{color:gc},ticks:{color:tc,callback:v=>v.toFixed(0)}}}}});
+  }
+  renderPortfolioOutputs();
+
+  // ── DCA simulator ──
+  function runDCA(){
+    const sum=datasets.reduce((s,d)=>s+(+portfolioWeights[d.ticker]||0),0);
+    const normW={};
+    datasets.forEach(d=>{ normW[d.ticker]=sum>0?(portfolioWeights[d.ticker]/sum)*100:0; });
+    const amount=Math.max(1,+document.getElementById('dcaAmountInput').value||500);
+    const freq=document.getElementById('dcaFreqInput').value;
+    dcaAmount=amount;dcaFrequency=freq;
+    saveState();
+
+    const res=simulateDCA(datasets,normW,amount,freq);
+    const ds=document.getElementById('dcaSummary');
+    ds.innerHTML=`
+      <div class="dca-summary-cell"><div class="dca-summary-label">TOTAL INVESTED</div>
+        <div class="dca-summary-value">$${res.totalInvested.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+      <div class="dca-summary-cell"><div class="dca-summary-label">FINAL VALUE</div>
+        <div class="dca-summary-value">$${res.finalValue.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+      <div class="dca-summary-cell"><div class="dca-summary-label">GAIN / LOSS</div>
+        <div class="dca-summary-value ${res.gain>=0?'pos':'neg'}">${res.gain>=0?'+':''}$${res.gain.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+      <div class="dca-summary-cell"><div class="dca-summary-label">RETURN ON INVESTED</div>
+        <div class="dca-summary-value ${res.gainPct>=0?'pos':'neg'}">${res.gainPct>=0?'+':''}${res.gainPct.toFixed(1)}%</div></div>`;
+
+    if(chartInstances.dca) chartInstances.dca.destroy();
+    const step=Math.max(1,Math.floor(res.dates.length/120));
+    const labels=res.dates.filter((_,i)=>i%step===0||i===res.dates.length-1);
+    chartInstances.dca=new Chart(document.getElementById('dcaChart'),{type:'line',data:{
+      labels,
+      datasets:[
+        {label:'Portfolio Value',data:res.portfolioValueOverTime.filter((_,i)=>i%step===0||i===res.dates.length-1),
+          borderColor:isLight?'#5a8a00':'#c8f060',backgroundColor:(isLight?'#5a8a00':'#c8f060')+'18',fill:true,borderWidth:2,pointRadius:0,tension:.2},
+        {label:'Total Invested',data:res.investedOverTime.filter((_,i)=>i%step===0||i===res.dates.length-1),
+          borderColor:tc,backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,4],pointRadius:0,tension:0}
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
+        tooltip:{...tt,callbacks:{label:ctx=>` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString(undefined,{maximumFractionDigits:0})}`}}},
+      scales:{x:{grid:{color:gc},ticks:{color:tc,maxRotation:0,maxTicksLimit:8}},
+        y:{grid:{color:gc},ticks:{color:tc,callback:v=>'$'+v.toLocaleString()}}}}});
+  }
+  runDCA();
+  document.getElementById('dcaRunBtn').addEventListener('click',runDCA);
 }
 
 function renderTable(container,datasets){
@@ -3477,7 +4257,8 @@ const LS_KEY='etflens_state';
 function saveState(){
   try{
     localStorage.setItem(LS_KEY,JSON.stringify({
-      selectedETFs,activePeriod,activeView,activeCategory,isLight
+      selectedETFs,activePeriod,activeView,activeCategory,isLight,analyticsBenchmark,
+      portfolioWeights,dcaAmount,dcaFrequency
     }));
   }catch(e){}
 }
@@ -3496,6 +4277,10 @@ if(saved){
   activePeriod=saved.activePeriod||'1y';
   activeView=saved.activeView||'overview';
   activeCategory=saved.activeCategory||'all';
+  analyticsBenchmark=saved.analyticsBenchmark||'SPY';
+  portfolioWeights=saved.portfolioWeights||{};
+  dcaAmount=saved.dcaAmount||500;
+  dcaFrequency=saved.dcaFrequency||'monthly';
   // Restore period button UI
   document.querySelectorAll('.period-btn').forEach(b=>{
     b.classList.toggle('active',b.dataset.period===activePeriod);
