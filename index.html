@@ -420,9 +420,9 @@
 
 <script>
 // ─── ETF Database ─────────────────────────────────────────────────────────────
-// ETF_DB loaded from etf_historical.json
+  // ETF_DB loaded from etf.json
 let ETF_DB = [];
-// EXPOSURE_MAP loaded from etf_historical.json
+  // EXPOSURE_MAP loaded from etf.json
 let EXPOSURE_MAP = {};const EXPOSURE_LABELS={auEq:'AU Equity',intlEq:'Intl/US Equity',auBond:'AU Bonds',
   intlBond:'Intl/US Bonds',auReit:'AU Property',intlReit:'Intl/US Property',commodity:'Commodity',crypto:'Crypto'};
 
@@ -451,7 +451,7 @@ const PERIOD_INTERVAL={
   '1y':'1d','3y':'1wk','5y':'1wk','10y':'1mo','max':'1mo'
 };
 
-// AU_ETF_TICKERS loaded from etf_historical.json
+  // AU_ETF_TICKERS loaded from etf.json
 let AU_ETF_TICKERS = new Set();
 const PERIOD_MIN_SPAN_DAYS={
   '5d':3,'1m':20,'3m':70,'6m':150,
@@ -516,7 +516,7 @@ async function fetchYahoo(ticker, period) {
 // Coverage: Jan 2010 → Jun 2026 (~198 monthly data points per ETF)
 // Key events reflected: 2011 debt ceiling, 2015-16 China selloff, 2018 Q4 crash,
 // COVID crash Mar 2020, 2022 rate-hike bear market, AI rally 2023-24, gold surge 2025-26
-// HIST_MONTHLY loaded from etf_historical.json
+  // HIST_MONTHLY loaded from etf.json
 let HIST_MONTHLY = {};
 const D = []; // dates array — populated after JSON load
 
@@ -1181,7 +1181,7 @@ function updateChips(){
     + `<span class="selected-count">${selectedETFs.length}/8 selected</span>`;
 }
 
-// POPULAR_ETFS loaded from etf_historical.json
+  // POPULAR_ETFS loaded from etf.json
 let POPULAR_ETFS = [];
 function getFiltered(searchInputId){
   const q=(document.getElementById(searchInputId||'etfSearch')?.value||'').toLowerCase();
@@ -2432,7 +2432,7 @@ async function loadDataAndBoot() {
   const msgEl   = document.getElementById('loadMsg');
 
   // Attempt to fetch the JSON from the same directory as the HTML
-  const JSON_URL = './etf_historical.json';
+  const JSON_URL = './etf.json';
 
   const tryLoad = async () => {
     overlay.classList.remove('hidden');
@@ -2456,7 +2456,7 @@ async function loadDataAndBoot() {
       const errEl = document.createElement('div');
       errEl.className = 'load-error';
       errEl.innerHTML = `<strong>Could not load ETF data.</strong><br>
-        Make sure <code>etf_historical.json</code> is in the same folder as this HTML file and served via a local web server (not opened as a file://).<br><br>
+        Make sure <code>etf.json</code> is in the same folder as this HTML file and served via a local web server (not opened as a file://).<br><br>
         <em>${err.message}</em>`;
       const retryBtn = document.createElement('button');
       retryBtn.className = 'load-retry';
