@@ -441,6 +441,10 @@ let dcaPeriod='max';
 // Cache: { "SPY_1y": { prices, dates, source } }
 const dataCache={};
 
+  // Live Yahoo Finance fetching is disabled; the app falls back to bundled
+  // historical/simulated data instead.
+  const LIVE_FETCH_ENABLED = false;
+
 // ─── Yahoo Finance fetch via CORS proxy ───────────────────────────────────────
 const PERIOD_RANGE={
   '5d':'5d','1m':'1mo','3m':'3mo','6m':'6mo',
@@ -459,6 +463,8 @@ const PERIOD_MIN_SPAN_DAYS={
 };
 
 async function fetchYahoo(ticker, period) {
+  if (!LIVE_FETCH_ENABLED) return null;
+
   const cacheKey=`${ticker}_${period}`;
   if(dataCache[cacheKey]) return dataCache[cacheKey];
 
