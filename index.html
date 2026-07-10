@@ -2287,19 +2287,37 @@ document.getElementById('themeToggle').addEventListener('click',()=>{applyTheme(
 
 // ─── Persistence helpers ──────────────────────────────────────────────────────
 const LS_KEY='etflens_state';
+  const LS_VERSION_KEY = 'etflens_state_version';
+  const CURRENT_DATA_VERSION = '2'; // bump this whenever bundled data changes
+
 function saveState(){
   try{
-    localStorage.setItem(LS_KEY,JSON.stringify({
+    const payload = {
       selectedETFs,activePeriod,activeView,activeCategory,isLight,analyticsBenchmark,
       portfolioWeights,dcaAmount,dcaFrequency,dcaPeriod
-    }));
+          };
+          localStorage.setItem(LS_KEY, JSON.stringify(payload));
+          localStorage.setItem(LS_VERSION_KEY, CURRENT_DATA_VERSION);
+        } catch (e) { }
+      }
+      function invalidateStoredState() {
+        try {
+          localStorage.removeItem(LS_KEY);
+          localStorage.removeItem(LS_VERSION_KEY);
   }catch(e){}
 }
 function loadState(){
   try{
+    const savedVersion = localStorage.getItem(LS_VERSION_KEY);
+    if (savedVersion !== CURRENT_DATA_VERSION) {
+      invalidateStoredState();
+      return null;
+    }
     const raw=localStorage.getItem(LS_KEY);
     if(raw) return JSON.parse(raw);
-  }catch(e){}
+  } catch (e) {
+    invalidateStoredState();
+  }
   return null;
 }
 
