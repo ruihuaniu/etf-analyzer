@@ -341,17 +341,8 @@
         <button class="cat-btn active" data-cat="all">All</button>
         <button class="cat-btn" data-cat="popular">⭐ Popular</button>
         <button class="cat-btn" data-cat="au-equity">🦘 AU Equity</button>
-        <button class="cat-btn" data-cat="au-bond">🦘 AU Bond</button>
         <button class="cat-btn" data-cat="diversified">Diversified</button>
         <button class="cat-btn" data-cat="equity">US Equity</button>
-        <button class="cat-btn" data-cat="bond">US Bond</button>
-        <button class="cat-btn" data-cat="sector">Sector</button>
-        <button class="cat-btn" data-cat="intl">Intl</button>
-        <button class="cat-btn" data-cat="commodity">Commodity</button>
-        <button class="cat-btn" data-cat="real-estate">Real Estate</button>
-        <button class="cat-btn" data-cat="factor">Factor</button>
-        <button class="cat-btn" data-cat="crypto">Crypto</button>
-        <button class="cat-btn" data-cat="leveraged">Leveraged</button>
       </div>
     </div>
     <div class="etf-list" id="etfList"></div>
@@ -393,17 +384,8 @@
         <button class="cat-btn active" data-cat="all">All</button>
         <button class="cat-btn" data-cat="popular">⭐ Popular</button>
         <button class="cat-btn" data-cat="au-equity">🦘 AU Equity</button>
-        <button class="cat-btn" data-cat="au-bond">🦘 AU Bond</button>
         <button class="cat-btn" data-cat="diversified">Diversified</button>
         <button class="cat-btn" data-cat="equity">US Equity</button>
-        <button class="cat-btn" data-cat="bond">US Bond</button>
-        <button class="cat-btn" data-cat="sector">Sector</button>
-        <button class="cat-btn" data-cat="intl">Intl</button>
-        <button class="cat-btn" data-cat="commodity">Commodity</button>
-        <button class="cat-btn" data-cat="real-estate">Real Estate</button>
-        <button class="cat-btn" data-cat="factor">Factor</button>
-        <button class="cat-btn" data-cat="crypto">Crypto</button>
-        <button class="cat-btn" data-cat="leveraged">Leveraged</button>
       </div>
     </div>
     <div class="etf-list" id="etfListMobile" style="flex:1;"></div>
@@ -966,8 +948,7 @@ function drawdownEpisodes(prices,dates,topN=5){
 const BENCHMARKS=[
   {t:'SPY',label:'S&P 500 (SPY)'},
   {t:'VAS',label:'ASX 300 (VAS)'},
-  {t:'QQQ',label:'Nasdaq-100 (QQQ)'},
-  {t:'AGG',label:'US Agg Bond (AGG)'}
+  {t:'QQQ',label:'Nasdaq-100 (QQQ)'}
 ];
 
 // Overlap detection: flag pairs of selected ETFs whose underlying exposure
@@ -2457,9 +2438,8 @@ function populateFromJSON(json) {
 
   // POPULAR_ETFS
   POPULAR_ETFS = json.popular_etfs || [
-    'VAS','A200','VGS','VDHG','DHHF','NDQ','SPY','QQQ','VTS','VEU',
-    'IVV','VTI','AAA','GLD','VHY','ETHI','QLTY','HACK','IIND','IBIT',
-    'BND','VDGR','ARKK','GGUS'
+    'VAS','A200','VDHG','DHHF','SPY','QQQ',
+    'IVV','VTI','VHY','VDGR'
   ];
 
   // EXPOSURE_MAP
@@ -2469,36 +2449,15 @@ function populateFromJSON(json) {
     VDGR:{auEq:.28,intlEq:.42,auBond:.18,intlBond:.12},
     VDHG:{auEq:.37,intlEq:.53,auBond:.06,intlBond:.04},
     DHHF:{auEq:.37,intlEq:.63},
-    GBND:{auEq:.10,intlEq:.15,auBond:.35,intlBond:.40},
-    BSCF:{auEq:.18,intlEq:.27,auBond:.27,intlBond:.28},
-    DBBF:{auEq:.24,intlEq:.36,auBond:.20,intlBond:.20},
-    VAS:{auEq:1},FAIR:{auEq:1},HVST:{auEq:1},QOZ:{auEq:1},A200:{auEq:1},
-    VGS:{intlEq:1},ETHI:{intlEq:1},IMPQ:{intlEq:1},IIND:{intlEq:1},ASIA:{intlEq:1},
-    F100:{intlEq:1},ESTX:{intlEq:1},HJPN:{intlEq:1},HEUR:{intlEq:1},
-    NDQ:{intlEq:1},QUS:{intlEq:1},QLTY:{intlEq:1},INCM:{intlEq:1},
-    YMAX:{intlEq:1},UMAX:{intlEq:1},
-    HACK:{intlEq:1},CLDD:{intlEq:1},RBTZ:{intlEq:1},DRUG:{intlEq:1},
-    FOOD:{intlEq:1},FUEL:{intlEq:1},MNRS:{intlEq:1},
-    GGUS:{intlEq:1},GEAR:{auEq:1},BEAR:{auEq:-1},BBUS:{intlEq:-1},
-    AAA:{auBond:1},BILL:{auBond:1},QPON:{auBond:1},AGVT:{auBond:1},
-    CRED:{auBond:1},HBRD:{auBond:1},BHYB:{auBond:1},OZBD:{auBond:1},
-    QAU:{commodity:1},QCB:{commodity:1},
-    VAP:{auReit:1},VBLD:{intlReit:1},
+    VAS:{auEq:1},FAIR:{auEq:1},A200:{auEq:1},VHY:{auEq:1},VLC:{auEq:1},
+    VSO:{auEq:1},VETH:{auEq:1},
     SPY:{intlEq:1},QQQ:{intlEq:1},VTI:{intlEq:1},IVV:{intlEq:1},
-    GLD:{commodity:1},IAU:{commodity:1},SLV:{commodity:1},
-    BND:{intlBond:1},AGG:{intlBond:1},TLT:{intlBond:1},
-    VEA:{intlEq:1},VWO:{intlEq:1},EFA:{intlEq:1},EEM:{intlEq:1},
   };
 
   // AU_ETF_TICKERS — derive from JSON category or keep known set
   AU_ETF_TICKERS = new Set(json.au_tickers || [
-    'VAS','VGS','VGSH','VHY','VLC','VSO','VETH','VESG','VDHG','VDGR','VDBA','VDCO','VDAL','VDIF',
-    'VTS','VEU','VIGH','VISM','VEQ','VAE','VGE','VGT','VGTH','VMIN','VVLU',
-    'VBLD','VAP','VAF','VACF','VGB','VBND','VEFI','VIF','VICF',
-    'A200','NDQ','DHHF','GBND','BSCF','BHYB','QPON','AGVT','CRED','HBRD','AAA','BILL','OZBD',
-    'HACK','CLDD','RBTZ','DRUG','GGUS','GEAR','BEAR','BBUS','FOOD','FUEL','MNRS','QAU','QCB',
-    'IIND','ASIA','F100','ESTX','HJPN','HEUR','FAIR','ETHI','IMPQ','HVST','YMAX','UMAX',
-    'QOZ','QUS','QLTY','INCM','DBBF',
+    'VAS','VHY','VLC','VSO','VETH','VDHG','VDGR','VDBA','VDCO','VDAL',
+    'A200','DHHF','FAIR',
   ]);
 }
 
