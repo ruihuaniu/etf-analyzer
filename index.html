@@ -422,6 +422,11 @@
 // ─── ETF Database ─────────────────────────────────────────────────────────────
   // ETF_DB loaded from etf.json
 let ETF_DB = [];
+  // RETURNS_DB — {TICKER: {annual_calendar, trailing, annualised}} loaded from etf.json.
+  // These are verified real-world figures (see etf.json meta.data_quality_note).
+  // Prefer these over recomputing "% change" from the synthetic monthly_prices
+  // series wherever a verified period match exists.
+let RETURNS_DB = {};
   // EXPOSURE_MAP loaded from etf.json
 let EXPOSURE_MAP = {};const EXPOSURE_LABELS={auEq:'AU Equity',intlEq:'Intl/US Equity',auBond:'AU Bonds',
   intlBond:'Intl/US Bonds',auReit:'AU Property',intlReit:'Intl/US Property',commodity:'Commodity',crypto:'Crypto'};
@@ -800,6 +805,32 @@ function computeStats(prices){
   const up=((rets.filter(r=>r>0).length/rets.length)*100).toFixed(1);
   return{total,std,sharpe,maxDD:maxDD*100,upDays:up};
 }
+// ─── Verified period return lookup ─────────────────────────────────────────
+// Returns a cumulative % change for (ticker, period) sourced from the
+// verified returns.trailing block in etf.json, or null if no verified figure
+// exists for that period (e.g. 5d/1m/3m/6m — there is no real sub-year data
+// backing those, so we deliberately do NOT fabricate a number for them and
+// fall back to the old synthetic-price computation for those short windows
+// only).
+function getVerifiedTotal(ticker, period){
+  const r = RETURNS_DB[ticker];
+  if(!r) return null;
+  if(period==='1y' || period==='3y' || period==='5y' || period==='10y'){
+    const v = r.trailing && r.trailing[period];
+    return (typeof v === 'number') ? v : null;
+  }
+  if(period==='max'){
+    const ac = r.annual_calendar;
+    if(!ac) return null;
+    const years = Object.keys(ac);
+    if(!years.length) return null;
+    let factor = 1;
+    years.forEach(y => { factor *= (1 + ac[y]/100); });
+    return (factor - 1) * 100;
+  }
+  return null; // 5d/1m/3m/6m/ytd — no verified data available
+}
+
 function calcDrawdown(prices){
   let peak=prices[0];
   return prices.map(p=>{if(p>peak)peak=p;return((p-peak)/peak)*100;});
@@ -1213,22 +1244,30 @@ function buildETFListHTML(etfs){
     // Use cached live data for change if available; otherwise fall back to the
     // same historical series that the chart uses (buildFromMonthly) so the %
     // shown here always matches the Indexed Performance chart and stat cards.
-    const cached=dataCache[`${e.t}_${activePeriod}`];
     let chgStr='—';
-    if(cached){
-      const p=cached.prices;
-      const chg=((p[p.length-1]/p[0])-1)*100;
-      const pos=chg>=0;
-      chgStr=`<span class="etf-change ${pos?'pos':'neg'}">${pos?'+':''}${chg.toFixed(2)}%</span>`;
+    const verifiedChg=getVerifiedTotal(e.t,activePeriod);
+    if(verifiedChg!=null){
+      // Prefer the verified real-world figure (from returns.trailing in
+      // etf.json) over recomputing from the synthetic monthly price series.
+      const pos=verifiedChg>=0;
+      chgStr=`<span class="etf-change ${pos?'pos':'neg'}">${pos?'+':''}${verifiedChg.toFixed(2)}%</span>`;
     } else {
-      const hist=buildFromMonthly(e.t,activePeriod);
-      if(hist){
-        const p=hist.prices;
+      const cached=dataCache[`${e.t}_${activePeriod}`];
+      if(cached){
+        const p=cached.prices;
         const chg=((p[p.length-1]/p[0])-1)*100;
         const pos=chg>=0;
         chgStr=`<span class="etf-change ${pos?'pos':'neg'}">${pos?'+':''}${chg.toFixed(2)}%</span>`;
+      } else {
+        const hist=buildFromMonthly(e.t,activePeriod);
+        if(hist){
+          const p=hist.prices;
+          const chg=((p[p.length-1]/p[0])-1)*100;
+          const pos=chg>=0;
+          chgStr=`<span class="etf-change ${pos?'pos':'neg'}">${pos?'+':''}${chg.toFixed(2)}%</span>`;
+        }
+        // If no historical data either, chgStr stays '—' (no fake numbers)
       }
-      // If no historical data either, chgStr stays '—' (no fake numbers)
     }
     return`<div class="etf-item ${sel?'selected':''}" onclick="toggleETF('${e.t}')" tabindex="0" role="checkbox" aria-checked="${sel}" aria-label="${e.t} — ${e.n}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleETF('${e.t}');}">
       <div class="check-box">${sel?'✓':''}</div>
@@ -1322,8 +1361,15 @@ async function renderContent(){
                        (d && d.prices && d.prices.length>60 ? d : null) ||
                        dataCache[`${ticker}_max`] ||
                        d;
+      const stats=computeStats(d.prices);
+      // std/sharpe/maxDD/upDays still come from the (synthetic-within-year)
+      // price series since there's no verified equivalent for those — but
+      // prefer the verified real-world total return when one exists for
+      // this period, rather than the recomputed-from-synthetic-prices value.
+      const verifiedTotal=getVerifiedTotal(ticker,activePeriod);
+      if(verifiedTotal!=null) stats.total=verifiedTotal;
       return{ticker,prices:d.prices,dates:d.dates,norm:normalise(d.prices),
-        color:getColors()[i],stats:computeStats(d.prices),source:d.source,
+        color:getColors()[i],stats,source:d.source,
         fullPrices:fullHist.prices,fullDates:fullHist.dates};
     });
     renderETFList();
@@ -2366,6 +2412,12 @@ function populateFromJSON(json) {
     er:  d.expense_ratio_pct != null ? d.expense_ratio_pct : 0,
     aum: d.aum             || '',
   }));
+
+  // RETURNS_DB — verified annual_calendar / trailing / annualised per ticker.
+  RETURNS_DB = {};
+  Object.entries(etfs).forEach(([ticker, d]) => {
+    if (d.returns) RETURNS_DB[ticker] = d.returns;
+  });
 
   // HIST_MONTHLY — {TICKER: {dates: [...], prices: [...]}}
   // The JSON stores only non-null monthly_prices; we need to reconstruct
