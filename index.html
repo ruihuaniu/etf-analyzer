@@ -304,10 +304,6 @@
   </div>
   <div class="header-right">
     <div class="period-btns">
-      <button class="period-btn" data-period="5d">5D</button>
-      <button class="period-btn" data-period="1m">1M</button>
-      <button class="period-btn" data-period="3m">3M</button>
-      <button class="period-btn" data-period="6m">6M</button>
       <button class="period-btn active" data-period="1y">1Y</button>
       <button class="period-btn" data-period="3y">3Y</button>
       <button class="period-btn" data-period="5y">5Y</button>
@@ -531,26 +527,6 @@ function buildFromMonthly(ticker, period) {
   const mdata = HIST_MONTHLY[ticker];
   if (!mdata) return null;
 
-  const isMax = period === 'max';
-  const periodDays = {'5d':5,'1m':22,'3m':66,'6m':132,'1y':252,'3y':756,'5y':1260,'10y':2520}[period]||252;
-
-  // Strip leading nulls (ETFs that launched mid-dataset)
-  let rawPrices = mdata.prices || mdata;
-  let rawDates  = mdata.dates  || D;
-  let firstReal = rawPrices.findIndex(p => p !== null);
-  if (firstReal === -1) return null;
-  const slicedPrices = rawPrices.slice(firstReal);
-  const slicedDates  = rawDates.slice(firstReal);
-  const totalMonths  = slicedPrices.length;
-
-  // For max, use all available data; otherwise slice to the requested period
-  const monthsNeeded = Math.ceil(periodDays / 21) + 1;
-  const startIdx = isMax ? 0 : Math.max(0, totalMonths - monthsNeeded);
-  const usePrices = slicedPrices.slice(startIdx);
-  const useDates  = slicedDates.slice(startIdx);
-
-  // Linear interpolation: expand monthly → ~21 trading days per month
-  // Parse a 'MMM YY' or 'MMM D, YY' date string into a JS Date
   const MMAP={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
   function parseMonthDate(s){
     if(!s) return null;
@@ -561,6 +537,63 @@ function buildFromMonthly(ticker, period) {
     return null;
   }
   function fmtDate(d){ return _fmtDateFast(d); }
+
+  const isMax = period === 'max';
+  // Periods with a verified real-world anchor point: these are aligned to
+  // real Jan 1 – Dec 31 calendar-year boundaries rather than an arbitrary
+  // "trailing N days from today" window, since only Dec-31 endpoints in
+  // monthly_prices are backed by verified annual_calendar data (see
+  // etf.json meta.data_quality_note). 5D/1M/6M have no such anchor and are
+  // disabled in the UI rather than approximated here.
+  const CALENDAR_ALIGNED = {'1y':1,'3y':3,'5y':5,'10y':10};
+
+  const rawPrices = mdata.prices || mdata;
+  const rawDates  = mdata.dates  || D;
+  const firstReal = rawPrices.findIndex(p => p !== null);
+  if (firstReal === -1) return null;
+
+  let startIdx, endIdx; // inclusive indices into rawPrices/rawDates
+
+  if (isMax || CALENDAR_ALIGNED[period]) {
+    // Find the last fully-complete calendar year present in the shared date
+    // spine (the spine's final entry may be a partial current year).
+    let lastIdx = rawPrices.length - 1;
+    while (lastIdx > firstReal && rawPrices[lastIdx] === null) lastIdx--;
+    const lastDate = parseMonthDate(rawDates[lastIdx]);
+    const lastFullYear = lastDate.getMonth() === 11 ? lastDate.getFullYear() : lastDate.getFullYear() - 1;
+
+    const firstDate = parseMonthDate(rawDates[firstReal]);
+    const earliestAvailableYear = firstDate.getFullYear();
+
+    const n = CALENDAR_ALIGNED[period]; // undefined for 'max'
+    const startYear = isMax ? earliestAvailableYear : Math.max(earliestAvailableYear, lastFullYear - n + 1);
+    const endYear = lastFullYear;
+
+    // Locate Jan of startYear and Dec of endYear within rawDates, but never
+    // slice before firstReal or after lastIdx -- the date spine is shared
+    // across all tickers, so "Jan of startYear" can exist in the spine while
+    // still being a null (pre-inception) slot for a ticker that launched
+    // mid-year (e.g. VDAL launched March 2025).
+    startIdx = rawDates.findIndex(s => { const d=parseMonthDate(s); return d && d.getFullYear()===startYear && d.getMonth()===0; });
+    if (startIdx === -1) startIdx = firstReal;
+    startIdx = Math.max(startIdx, firstReal);
+    endIdx = rawDates.findIndex(s => { const d=parseMonthDate(s); return d && d.getFullYear()===endYear && d.getMonth()===11; });
+    if (endIdx === -1) endIdx = lastIdx;
+    endIdx = Math.min(endIdx, lastIdx);
+  } else {
+    // 3M (and any other non-calendar-aligned period): old trailing-window
+    // behaviour, unchanged.
+    const periodDays = {'5d':5,'1m':22,'3m':66,'6m':132}[period] || 66;
+    const monthsNeeded = Math.ceil(periodDays / 21) + 1;
+    const totalMonths = rawPrices.length - firstReal;
+    startIdx = firstReal + Math.max(0, totalMonths - monthsNeeded);
+    endIdx = rawPrices.length - 1;
+  }
+
+  const usePrices = rawPrices.slice(startIdx, endIdx + 1);
+  const useDates  = rawDates.slice(startIdx, endIdx + 1);
+
+  // Linear interpolation: expand monthly → ~21 trading days per month
   const prices = [], dates = [];
   for (let m = 0; m < usePrices.length - 1; m++) {
     const p0 = usePrices[m], p1 = usePrices[m+1];
@@ -568,7 +601,6 @@ function buildFromMonthly(ticker, period) {
     const d1 = parseMonthDate(useDates[m+1]);
     for (let d = 0; d < 21; d++) {
       prices.push(+(p0 + (p1 - p0) * (d / 21)).toFixed(2));
-      // Interpolate date between d0 and d1 so every point has a real label
       if(d0 && d1){
         const t = d / 21;
         const ms = d0.getTime() + t * (d1.getTime() - d0.getTime());
@@ -578,14 +610,10 @@ function buildFromMonthly(ticker, period) {
       }
     }
   }
-  // Append final month-end point
   prices.push(usePrices[usePrices.length - 1]);
   dates.push(useDates[useDates.length - 1]);
 
-  // Trim to exact period length (skip for max)
-  const out = isMax ? prices : prices.slice(-periodDays);
-  const outD = isMax ? dates : dates.slice(-periodDays);
-  const result = { prices: out, dates: outD, source: 'historical' };
+  const result = { prices, dates, source: 'historical' };
   _bfmCache[cacheKey] = result;
   return result;
 }
@@ -813,6 +841,43 @@ function getVerifiedTotal(ticker, period){
   return null; // 5d/1m/3m/6m/ytd — no verified data available
 }
 
+// ─── Real-data risk stats (volatility / Sharpe / max drawdown) ────────────
+// Computed directly from verified annual_calendar returns rather than the
+// synthetic monthly price path. This trades granularity for accuracy: we
+// can only see year-end-to-year-end swings (an intra-year drawdown that
+// fully recovered by Dec 31 is invisible here), but every number that IS
+// shown is real. Requires at least 2 annual observations in the selected
+// window; returns null (caller keeps old estimate) otherwise -- a single
+// year has no variance to measure.
+function computeAnnualRiskStats(ticker, period){
+  const r = RETURNS_DB[ticker];
+  if(!r || !r.annual_calendar) return null;
+  const years = Object.keys(r.annual_calendar).sort();
+  if(!years.length) return null;
+  const n = {'3y':3,'5y':5,'10y':10}[period];
+  const useYears = (period==='max') ? years : (n ? years.slice(-n) : null);
+  if(!useYears || useYears.length < 2) return null; // 1y or insufficient history
+
+  const rets = useYears.map(y => r.annual_calendar[y]/100);
+  const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+  const variance = rets.reduce((a,b)=>a+(b-mean)**2,0)/rets.length;
+  const std = Math.sqrt(variance)*100; // already an annual figure, no scaling needed
+  const sharpe = std>0 ? (mean*100)/std : null;
+
+  // Max drawdown from the annual (Dec 31) wealth curve only -- a real but
+  // partial picture: cannot see drawdowns that occurred and fully
+  // recovered within a single calendar year.
+  let wealth=1, peak=1, maxDD=0;
+  for(const rr of rets){
+    wealth *= (1+rr);
+    if(wealth>peak) peak=wealth;
+    const dd=(peak-wealth)/peak;
+    if(dd>maxDD) maxDD=dd;
+  }
+  const upPct = (rets.filter(rr=>rr>0).length/rets.length)*100;
+  return {std, sharpe, maxDD: maxDD*100, up: upPct.toFixed(1), n: useYears.length, years: useYears};
+}
+
 function calcDrawdown(prices){
   let peak=prices[0];
   return prices.map(p=>{if(p>peak)peak=p;return((p-peak)/peak)*100;});
@@ -889,9 +954,28 @@ function pearsonCorr(a,b){
   if(vx===0||vy===0) return null;
   return cov/Math.sqrt(vx*vy);
 }
+// Correlation from real, verified annual returns rather than the synthetic
+// monthly price path -- each ticker's monthly noise is generated
+// independently, so funds that are near-identical in reality (e.g. SPY vs
+// VOO vs IVV, all tracking the S&P 500) were showing spuriously low
+// correlation. Annual returns are real for every ticker, so this is
+// accurate wherever there are at least 2 overlapping calendar years.
+function annualCorr(tickerA, tickerB){
+  const ra = RETURNS_DB[tickerA] && RETURNS_DB[tickerA].annual_calendar;
+  const rb = RETURNS_DB[tickerB] && RETURNS_DB[tickerB].annual_calendar;
+  if(!ra || !rb) return null;
+  const commonYears = Object.keys(ra).filter(y => rb.hasOwnProperty(y)).sort();
+  if(commonYears.length < 2) return null;
+  const x = commonYears.map(y => ra[y]/100);
+  const y = commonYears.map(y => rb[y]/100);
+  return pearsonCorr(x,y);
+}
 function correlationMatrix(datasets){
-  const rets=datasets.map(d=>dailyReturns(d.prices));
-  return datasets.map((_,i)=>datasets.map((__,j)=>i===j?1:pearsonCorr(rets[i],rets[j])));
+  return datasets.map(d1=>datasets.map(d2=>{
+    if(d1.ticker===d2.ticker) return 1;
+    const c = annualCorr(d1.ticker, d2.ticker);
+    return c; // null if <2 overlapping verified years -- caller renders as '—'
+  }));
 }
 function corrColor(v){
   // -1 -> accent2 (blue), 0 -> neutral surface, +1 -> accent3 (red/pink)
@@ -1343,12 +1427,20 @@ async function renderContent(){
                        dataCache[`${ticker}_max`] ||
                        d;
       const stats=computeStats(d.prices);
-      // std/sharpe/maxDD/upDays still come from the (synthetic-within-year)
-      // price series since there's no verified equivalent for those — but
-      // prefer the verified real-world total return when one exists for
-      // this period, rather than the recomputed-from-synthetic-prices value.
+      // Prefer real, verified figures over ones derived from the synthetic
+      // monthly price path, wherever a verified equivalent exists.
       const verifiedTotal=getVerifiedTotal(ticker,activePeriod);
       if(verifiedTotal!=null) stats.total=verifiedTotal;
+      const annualRisk=computeAnnualRiskStats(ticker,activePeriod);
+      if(annualRisk!=null){
+        stats.std=annualRisk.std;
+        stats.sharpe=annualRisk.sharpe;
+        stats.maxDD=annualRisk.maxDD;
+        stats.upDays=annualRisk.up;
+        stats.riskYearsUsed=annualRisk.n; // for UI disclosure (e.g. "based on 5 years")
+      } else {
+        stats.riskYearsUsed=null; // signals: these fields are still synthetic-derived
+      }
       return{ticker,prices:d.prices,dates:d.dates,norm:normalise(d.prices),
         color:getColors()[i],stats,source:d.source,
         fullPrices:fullHist.prices,fullDates:fullHist.dates};
@@ -1558,15 +1650,8 @@ function renderPerformance(container,datasets){
     </div>
     <div class="chart-card">
       <div class="chart-card-header">
-        <div><div class="chart-card-title">Monthly Returns</div>
-        <div class="chart-card-sub">Last 12 months</div></div>
-      </div>
-      <div class="chart-wrapper" style="height:260px"><canvas id="monthlyBar"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-card-header">
         <div><div class="chart-card-title">Drawdown Analysis</div>
-        <div class="chart-card-sub">Rolling peak-to-trough decline${datasets.length>1?' · aligned to shortest fund\'s history':''}</div></div>
+        <div class="chart-card-sub">⚠️ Estimated — rolling peak-to-trough decline has no real daily/monthly data behind it${datasets.length>1?' · aligned to shortest fund\'s history':''}</div></div>
       </div>
       <div class="chart-wrapper" style="height:260px"><canvas id="ddChart"></canvas></div>
     </div>
@@ -1605,23 +1690,11 @@ function renderPerformance(container,datasets){
     scales:{x:{grid:{color:gc},ticks:{color:tc,maxRotation:0,maxTicksLimit:8}},
       y:{grid:{color:gc},ticks:{color:tc,callback:v=>(v-100).toFixed(0)+'%'},baseline:100}}}}); 
 
-  // Drawdown and Monthly Returns keep the existing shortest-fund alignment —
-  // both are path-dependent calculations that shouldn't be spliced with nulls.
+  // Drawdown keeps the existing shortest-fund alignment — it's a
+  // path-dependent calculation that shouldn't be spliced with nulls.
   const minLen=Math.min(...datasets.map(d=>d.prices.length));
   const step=Math.max(1,Math.floor(minLen/100));
   const sl=datasets[0].dates.slice(-minLen).filter((_,i)=>i%step===0||i===minLen-1);
-
-  // Monthly
-  const monthData=datasets.map(d=>monthlyReturns(d.fullPrices,d.fullDates));
-  const monthLabels=monthData[0].labels;
-  chartInstances.monthly=new Chart(document.getElementById('monthlyBar'),{type:'bar',data:{
-    labels:monthLabels,
-    datasets:datasets.map((d,i)=>({label:d.ticker,data:monthData[i].rets.map(v=>+v.toFixed(2)),
-      backgroundColor:d.color+'bb',borderColor:d.color,borderWidth:1,borderRadius:3}))
-  },options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:true,labels:{color:tc,usePointStyle:true,pointStyleWidth:8,font:{size:11}}},
-      tooltip:{...tt,callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y>=0?'+':''}${ctx.parsed.y}%`}}},
-    scales:{x:{grid:{color:gc},ticks:{color:tc}},y:{grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}}}}});
 
   // Drawdown
   chartInstances.dd=new Chart(document.getElementById('ddChart'),{type:'line',data:{
@@ -1645,21 +1718,21 @@ function renderRisk(container,datasets){
     <div class="two-col-charts">
       <div class="chart-card"><div class="chart-card-header"><div>
         <div class="chart-card-title">Annualised Volatility</div>
-        <div class="chart-card-sub">Std dev × √252</div>
+        <div class="chart-card-sub">From real annual returns where available (3Y+); 1Y falls back to estimated data</div>
       </div></div><div class="chart-wrapper" style="height:260px"><canvas id="volBar"></canvas></div></div>
       <div class="chart-card"><div class="chart-card-header"><div>
         <div class="chart-card-title">Sharpe Ratio</div>
-        <div class="chart-card-sub">Risk-adjusted return</div>
+        <div class="chart-card-sub">Risk-adjusted return, from real annual returns where available (3Y+)</div>
       </div></div><div class="chart-wrapper" style="height:260px"><canvas id="sharpeBar"></canvas></div></div>
     </div>
     <div class="two-col-charts">
       <div class="chart-card"><div class="chart-card-header"><div>
         <div class="chart-card-title">Max Drawdown</div>
-        <div class="chart-card-sub">Largest peak-to-trough decline</div>
+        <div class="chart-card-sub">Largest year-end-to-year-end decline (3Y+ real; may miss drawdowns that recovered within a single year)</div>
       </div></div><div class="chart-wrapper" style="height:260px"><canvas id="mddBar"></canvas></div></div>
       <div class="chart-card"><div class="chart-card-header"><div>
         <div class="chart-card-title">Rolling 21-Day Volatility</div>
-        <div class="chart-card-sub">Annualised, over time</div>
+        <div class="chart-card-sub">⚠️ Estimated — no real daily/monthly data exists to compute this</div>
       </div></div><div class="chart-wrapper" style="height:260px"><canvas id="rvolLine"></canvas></div></div>
     </div>
   </div>`;
@@ -1707,7 +1780,7 @@ async function renderAnalytics(container,datasets){
     <div class="chart-card">
       <div class="chart-card-header"><div>
         <div class="chart-card-title">Correlation Matrix</div>
-        <div class="chart-card-sub">Pairwise correlation of daily returns over selected period</div>
+        <div class="chart-card-sub">From real annual returns, overlapping calendar years only</div>
       </div></div>
       <div id="overlapWarnings"></div>
       <div class="corr-wrap"><table class="corr-table" id="corrTable"></table></div>
@@ -1717,7 +1790,7 @@ async function renderAnalytics(container,datasets){
     <div class="chart-card">
       <div class="chart-card-header"><div>
         <div class="chart-card-title">Rolling 12-Month Return</div>
-        <div class="chart-card-sub">Return over any trailing 252 trading days — shows best/worst windows, not just one snapshot</div>
+        <div class="chart-card-sub">⚠️ Estimated — trailing windows other than calendar-year-end have no real data behind them</div>
       </div></div>
       <div class="chart-wrapper" style="height:280px"><canvas id="rollRetChart"></canvas></div>
     </div>
@@ -1726,7 +1799,7 @@ async function renderAnalytics(container,datasets){
       <div class="chart-card">
         <div class="chart-card-header"><div>
           <div class="chart-card-title">Drawdown Episodes</div>
-          <div class="chart-card-sub">Worst peak-to-trough declines &amp; recovery time</div>
+          <div class="chart-card-sub">⚠️ Estimated — specific dates/lengths have no real daily/monthly data behind them</div>
         </div></div>
         <div id="ddEpisodes" style="padding:4px 20px 18px;"></div>
       </div>
@@ -1744,7 +1817,7 @@ async function renderAnalytics(container,datasets){
     <div class="chart-card">
       <div class="chart-card-header"><div>
         <div class="chart-card-title">Rolling Sharpe Ratio</div>
-        <div class="chart-card-sub">Risk-adjusted return over a trailing 3-month window — shows whether edge is consistent or a one-off spike</div>
+        <div class="chart-card-sub">⚠️ Estimated — trailing 3-month window has no real daily/monthly data behind it</div>
       </div></div>
       <div class="chart-wrapper" style="height:260px"><canvas id="rollSharpeChart"></canvas></div>
     </div>
@@ -1852,10 +1925,9 @@ async function renderAnalytics(container,datasets){
         '<div style="padding:30px;text-align:center;color:var(--text-dim);font-size:11px;">Benchmark data unavailable.</div>';
       return;
     }
-    const benchRets=dailyReturns(benchPrices);
     const vals=datasets.map(d=>{
       if(d.ticker===benchTicker) return 1;
-      const c=pearsonCorr(dailyReturns(d.fullPrices),benchRets);
+      const c=annualCorr(d.ticker,benchTicker);
       return c===null?0:+c.toFixed(2);
     });
     chartInstances.benchCorr=new Chart(document.getElementById('benchCorrBar'),{type:'bar',data:{
@@ -2351,13 +2423,23 @@ function loadState(){
 // ─── Data loader ──────────────────────────────────────────────────────────────
 function initApp() {
   const saved = loadState();
+  const validTickers = new Set(ETF_DB.map(e => e.t));
+  const validCategories = new Set(['all','popular','au-equity','diversified','equity']);
   if (saved) {
-    selectedETFs = Array.isArray(saved.selectedETFs) && saved.selectedETFs.length ? saved.selectedETFs : ['VAS','SPY','QQQ'];
+    const restoredETFs = Array.isArray(saved.selectedETFs) ? saved.selectedETFs.filter(t => validTickers.has(t)) : [];
+    selectedETFs = restoredETFs.length ? restoredETFs : ['VAS','SPY','QQQ'];
     activePeriod   = saved.activePeriod   || '1y';
+    if (['5d','1m','3m','6m'].includes(activePeriod)) activePeriod = '1y'; // these are now removed
     activeView     = saved.activeView     || 'overview';
-    activeCategory = saved.activeCategory || 'all';
-    analyticsBenchmark = saved.analyticsBenchmark || 'SPY';
-    portfolioWeights   = saved.portfolioWeights   || {};
+    activeCategory = validCategories.has(saved.activeCategory) ? saved.activeCategory : 'all';
+    analyticsBenchmark = validTickers.has(saved.analyticsBenchmark) ? saved.analyticsBenchmark : 'SPY';
+    // Drop portfolio weights for tickers that no longer exist
+    portfolioWeights = {};
+    if (saved.portfolioWeights) {
+      Object.entries(saved.portfolioWeights).forEach(([t,w]) => {
+        if (validTickers.has(t)) portfolioWeights[t] = w;
+      });
+    }
     dcaAmount     = saved.dcaAmount     || 500;
     dcaFrequency  = saved.dcaFrequency  || 'monthly';
     dcaPeriod     = saved.dcaPeriod     || 'max';
